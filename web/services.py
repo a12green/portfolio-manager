@@ -88,6 +88,12 @@ def create_fund_payload(
     *,
     user: "WebUser | None" = None,
 ) -> dict[str, Any]:
+    if user is not None:
+        # Enforce owner scope here too, not only in the route: a caller must not
+        # create a fund for an owner it cannot see.
+        from web import auth
+
+        auth.assert_owner_field(user, owner)
     conn = connect_db(trades_cli._db_path())
     try:
         init_trade_schema(conn)
@@ -549,7 +555,7 @@ def update_fund_manual_balance(
         fund = get_fund_by_name(conn, fund_name)
         if not fund:
             raise ValueError(f"Unknown fund {fund_name!r}")
-        upsert_fund_manual_balance(conn, fund.id, nav, balance_date)
+        upsert_fund_manual_balance(conn, fund.id, balance_date, nav)
         return {"fund_name": fund_name, "nav": nav, "balance_date": balance_date.isoformat()}
     finally:
         conn.close()

@@ -406,8 +406,11 @@ def get_portfolio(
         return services.portfolio_payload(
             owner=owner, fund=fund, market=market, live=live
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.get("/api/ledger")
@@ -420,8 +423,11 @@ def get_ledger(
     owner = resolve_owner(user, owner)
     try:
         return services.ledger_payload(owner=owner, fund=fund, live=live)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.get("/api/heatmap")
@@ -437,16 +443,22 @@ def get_heatmap(
         return services.heatmap_payload(
             owner=owner, fund=fund, color_by=color_by, live=live
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.get("/api/market-movers")
 def get_market_movers(market: str = "United States", user: WebUser = Depends(get_current_user)):
     try:
         return services.movers_payload(market)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.get("/api/fund-balances")
@@ -457,8 +469,11 @@ def get_fund_balances(
     owner = resolve_owner(user, owner)
     try:
         return services.fund_balances_payload(owner)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.put("/api/funds/{fund_name}/balance")
@@ -483,12 +498,15 @@ def update_fund_balance(
         
         balance_date = body.balance_date or date.today()
         return services.update_fund_manual_balance(fund_name, body.nav, balance_date)
+    except HTTPException:
+        raise
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001 - log server-side, never leak the internal message
+        logger.exception("Fund balance update failed")
+        raise HTTPException(status_code=500, detail="Internal error") from e
 
 
 @app.get("/api/net-worth")
@@ -499,8 +517,11 @@ def get_net_worth(
     owner = resolve_owner(user, owner)
     try:
         return services.net_worth_payload(owner)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.get("/api/other-assets")
@@ -511,8 +532,11 @@ def get_other_assets(
     owner = resolve_owner(user, owner)
     try:
         return services.other_assets_payload(owner)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.post("/api/other-assets")
@@ -527,8 +551,11 @@ def create_other_asset(
         return services.create_other_asset(owner, body.asset_type, body.amount, body.currency.upper())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 @app.delete("/api/other-assets/{asset_type}")
 def delete_other_asset(
@@ -542,8 +569,11 @@ def delete_other_asset(
         return services.delete_other_asset(owner, asset_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.get("/api/fund-trends")
@@ -555,8 +585,11 @@ def get_fund_trends(
     owner = resolve_owner(user, owner)
     try:
         return services.fund_trends_payload(owner, fund)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Request failed")
+        raise HTTPException(status_code=500, detail="Internal error") from None
 
 
 @app.get("/")
