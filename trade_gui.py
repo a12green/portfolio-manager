@@ -2219,7 +2219,7 @@ class TradeEntryApp(tk.Tk):
                         d.ticker,
                         f"{d.ledger_shares:g}",
                         f"{d.sheet_shares:g}",
-                        f"{d.delta:+.g}",
+                        f"{d.delta:+g}",
                         d.scope,
                     ),
                 )

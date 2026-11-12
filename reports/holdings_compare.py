@@ -445,7 +445,7 @@ def format_discrepancy_summary(discrepancies: list[HoldingsDiscrepancy]) -> str:
         return "Sheet check: no share-count discrepancies."
     parts = []
     for d in discrepancies[:8]:
-        parts.append(f"{d.ticker} ledger {d.ledger_shares:g} vs sheet {d.sheet_shares:g} ({d.delta:+.g})")
+        parts.append(f"{d.ticker} ledger {d.ledger_shares:g} vs sheet {d.sheet_shares:g} ({d.delta:+g})")
     more = len(discrepancies) - len(parts)
     tail = f" · +{more} more" if more > 0 else ""
     return f"Sheet discrepancies ({discrepancies[0].scope}): " + "; ".join(parts) + tail
