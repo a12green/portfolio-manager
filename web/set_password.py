@@ -22,7 +22,7 @@ from ledger.trades_db import init_trade_schema
 from web import auth
 
 VALID_OWNERS = (OWNER_A, OWNER_B, OWNER_C)
-MIN_LENGTH = 8
+MIN_LENGTH = 12
 
 
 def main(argv: list[str] | None = None) -> int:

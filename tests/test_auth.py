@@ -59,7 +59,7 @@ def test_password_command_refuses_short_password(conn, monkeypatch):
 
 
 def test_password_command_refuses_mismatched_confirmation(conn, monkeypatch):
-    answers = iter(["longenough1", "longenough2"])
+    answers = iter(["longenough-one-1", "longenough-two-2"])
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": next(answers))
     assert set_password.main(["admin"]) != 0
 
@@ -75,9 +75,18 @@ def test_password_command_creates_owner_scoped_user(conn, monkeypatch):
 
 
 def test_password_command_rejects_unknown_owner(conn, monkeypatch):
-    answers = iter(["longenough1", "longenough1"])
+    answers = iter(["longenough-one-1", "longenough-one-1"])
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": next(answers))
     assert set_password.main(["someone", "--create", "--owner", "Nobody"]) != 0
+
+
+def test_password_minimum_is_twelve_characters(conn, monkeypatch):
+    answers = iter(["elevenchars1", "elevenchars1"])  # 12 characters: accepted
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": next(answers))
+    assert set_password.main(["admin"]) == 0
+    answers = iter(["elevenchar1", "elevenchar1"])  # 11 characters: refused
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": next(answers))
+    assert set_password.main(["admin"]) != 0
 
 
 def test_session_token_is_stored_hashed(conn):
