@@ -22,7 +22,9 @@ if TYPE_CHECKING:
 
 SESSION_COOKIE = "portfolio_session"
 SESSION_HOURS = int(os.getenv("WEB_SESSION_HOURS", "12"))
-SECURE_COOKIES = os.getenv("WEB_SECURE_COOKIES", "").strip().lower() in (
+# Secure by default: the session cookie is sent only over HTTPS. Set
+# WEB_SECURE_COOKIES=false only for plain-HTTP local use.
+SECURE_COOKIES = os.getenv("WEB_SECURE_COOKIES", "true").strip().lower() in (
     "1",
     "true",
     "yes",

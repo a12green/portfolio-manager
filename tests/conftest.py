@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
+import os
+
 ROOT = Path(__file__).resolve().parent.parent
+# The test client talks plain HTTP, so it cannot receive Secure cookies.
+# The default (true) is tested separately in a subprocess.
+os.environ.setdefault("WEB_SECURE_COOKIES", "false")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

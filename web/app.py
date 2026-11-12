@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -81,7 +81,7 @@ class LoginBody(BaseModel):
 
 class ChangePasswordBody(BaseModel):
     current_password: str = Field(min_length=1, max_length=200)
-    new_password: str = Field(min_length=8, max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
 
 
 class ProfileBody(BaseModel):
@@ -97,7 +97,7 @@ class ForgotPasswordBody(BaseModel):
 
 class ResetPasswordBody(BaseModel):
     token: str = Field(min_length=10, max_length=200)
-    new_password: str = Field(min_length=8, max_length=200)
+    new_password: str = Field(min_length=12, max_length=200)
 
 
 class FundCreate(BaseModel):
@@ -157,6 +157,36 @@ async def security_headers(request: Request, call_next):
     if SECURE_COOKIES:
         headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _expected_origins(request: Request) -> set[str]:
+    """Origins allowed to make state-changing requests: this server, and WEB_PUBLIC_URL."""
+    from urllib.parse import urlsplit
+
+    own = urlsplit(str(request.base_url))
+    origins = {f"{own.scheme}://{own.netloc}"}
+    public = urlsplit(os.getenv("WEB_PUBLIC_URL", "").strip())
+    if public.scheme and public.netloc:
+        origins.add(f"{public.scheme}://{public.netloc}")
+    return origins
+
+
+@app.middleware("http")
+async def csrf_guard(request: Request, call_next):
+    """Refuse cross-site writes. Two checks, either of which blocks a classic form-based CSRF:
+    a state-changing API call must send a JSON content type, which a plain HTML form cannot,
+    and if the browser sends an Origin header it must be this app's own origin."""
+    if request.method in _UNSAFE_METHODS and request.url.path.startswith("/api/"):
+        origin = request.headers.get("origin")
+        if origin and origin.rstrip("/") not in _expected_origins(request):
+            return JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
+        content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            return JSONResponse({"detail": "Expected a JSON request"}, status_code=415)
+    return await call_next(request)
 
 
 @app.post("/api/auth/login")

@@ -110,7 +110,7 @@ def test_owner_user_cannot_add_trade_to_another_owners_fund(client):
 def test_logout_ends_the_session(client):
     _login(client, "admin", ADMIN_PW)
     assert client.get("/api/auth/me").status_code == 200
-    client.post("/api/auth/logout")
+    assert client.post("/api/auth/logout", headers={"Content-Type": "application/json"}).status_code == 200
     assert client.get("/api/auth/me").status_code == 401
 
 
@@ -150,3 +150,53 @@ def test_security_headers_are_set(client):
     assert r.headers.get("x-frame-options") == "DENY"
     assert r.headers.get("x-content-type-options") == "nosniff"
     assert "content-security-policy" in {k.lower() for k in r.headers}
+
+
+def test_session_cookie_is_secure_by_default():
+    """Run in a clean interpreter so the test client's HTTP setting does not leak in."""
+    import os
+    import subprocess
+    import sys
+
+    env = {k: v for k, v in os.environ.items() if k != "WEB_SECURE_COOKIES"}
+    out = subprocess.run(
+        [sys.executable, "-c", "from web import auth; print(auth.SECURE_COOKIES)"],
+        env=env, capture_output=True, text=True, check=True,
+    )
+    assert out.stdout.strip() == "True"
+
+
+def test_cross_site_write_is_refused(client):
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": ADMIN_PW},
+        headers={"Origin": "https://evil.example"},
+    )
+    assert r.status_code == 403
+
+
+def test_write_without_json_body_is_refused(client):
+    r = client.post(
+        "/api/auth/login",
+        content=b"username=admin&password=x",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert r.status_code == 415
+
+
+def test_same_origin_write_is_allowed(client):
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "wrong-password-x"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert r.status_code == 401  # reached the handler, which rejected the password
+
+
+def test_change_password_enforces_twelve_characters(client):
+    _login(client, "admin", ADMIN_PW)
+    r = client.post(
+        "/api/auth/change-password",
+        json={"current_password": ADMIN_PW, "new_password": "elevenchar1"},
+    )
+    assert r.status_code == 422

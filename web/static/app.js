@@ -60,7 +60,7 @@ async function changePassword() {
     return;
   }
   if (new_password.length < 8) {
-    err.textContent = "New password must be at least 8 characters.";
+    err.textContent = "New password must be at least 12 characters.";
     err.hidden = false;
     return;
   }
@@ -90,7 +90,8 @@ async function api(path, opts = {}) {
     credentials: "same-origin",
     ...opts,
     headers: {
-      ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      // Always sent, so the server's CSRF check can rely on it, even for bodyless calls.
+      "Content-Type": "application/json",
       ...(opts.headers || {}),
     },
   });
@@ -1115,7 +1116,7 @@ async function submitReset() {
   const pw = $("#reset-new").value;
   const confirm = $("#reset-confirm").value;
   if (pw.length < 8) {
-    showMessage("#reset-error", "New password must be at least 8 characters.");
+    showMessage("#reset-error", "New password must be at least 12 characters.");
     return;
   }
   if (pw !== confirm) {
