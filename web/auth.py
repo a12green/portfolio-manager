@@ -36,6 +36,7 @@ SECURE_COOKIES = os.getenv("WEB_SECURE_COOKIES", "").strip().lower() in (
 _DEFAULT_USERS: tuple[tuple[str, str | None], ...] = (
     ("admin", None),
 )
+_DUMMY_HASH = bcrypt.hashpw(b"not-a-real-password", bcrypt.gensalt(rounds=12)).decode("ascii")
 LOCKED_PASSWORD_HASH = ""  # bcrypt rejects this, so verification always returns False
 
 _LOGIN_ATTEMPTS: dict[str, tuple[int, float]] = {}
@@ -153,10 +154,15 @@ def seed_default_users(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _client_key(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    if forwarded:
-        return forwarded
+    # X-Forwarded-For is client-controlled. Only believe it when a proxy we run sets it.
+    if TRUST_PROXY:
+        forwarded = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
     if request.client:
         return request.client.host
     return "unknown"
@@ -304,6 +310,7 @@ def authenticate_user(conn: sqlite3.Connection, username: str, password: str) ->
         (username.strip(),),
     ).fetchone()
     if row is None:
+        _verify_password(password, _DUMMY_HASH)  # same cost as a real check
         return None
     if not _verify_password(password, str(row[3])):
         return None
