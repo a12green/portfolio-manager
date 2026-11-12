@@ -56,16 +56,6 @@ app = FastAPI(
 )
 
 
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
 def get_current_user(request: Request, conn=Depends(_db_conn)) -> WebUser:
     token = request.cookies.get(SESSION_COOKIE)
     user = user_for_session_token(conn, token)
