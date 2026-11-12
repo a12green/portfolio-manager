@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -262,7 +262,7 @@ def create_fund(
     currency: str = "USD",
 ) -> TradeFund:
     init_trade_schema(conn)
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     cur = conn.execute(
         """
         INSERT INTO trade_funds (name, owner, currency, opening_cash, created_at)
@@ -329,7 +329,7 @@ def insert_trade(
         und = exp = stk = pc = None
         mult = 1.0
 
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     cur = conn.execute(
         """
         INSERT INTO trades (
@@ -479,7 +479,7 @@ def insert_fund_cash_event(
     notes: str | None = None,
 ) -> int:
     init_trade_schema(conn)
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     cur = conn.execute(
         """
         INSERT INTO fund_cash_events (fund_id, event_date, amount, notes, created_at)
@@ -523,7 +523,7 @@ def upsert_fund_reported_cash(
     source: str | None = None,
 ) -> None:
     init_trade_schema(conn)
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     conn.execute(
         """
         INSERT INTO fund_reported_cash (fund_id, balance_date, cash_balance, source, updated_at)
@@ -650,7 +650,7 @@ def upsert_fund_manual_balance(
     notes: str | None = None,
 ) -> None:
     init_trade_schema(conn)
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     conn.execute(
         """
         INSERT INTO fund_manual_balances (
@@ -695,7 +695,7 @@ def upsert_owner_other_asset(
 ) -> None:
     """Non-fund assets (bank accounts, property, ...) tracked as a single running total per owner+type."""
     init_trade_schema(conn)
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     conn.execute(
         """
         INSERT INTO owner_other_assets (owner, asset_type, amount, currency, notes, updated_at)
@@ -802,7 +802,7 @@ def mark_option_strike_alerted(
 ) -> bool:
     """Record a near-strike alert. Returns True if newly inserted."""
     init_trade_schema(conn)
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
     cur = conn.execute(
         """
         INSERT OR IGNORE INTO option_strike_near_alerts (

@@ -28,6 +28,10 @@ def _db_path() -> Path:
 
 
 def run_fund_add(name: str, owner: str, opening_cash: float, currency: str) -> None:
+    from config import OWNERS
+
+    if owner not in OWNERS:
+        raise ValueError(f"Unknown owner {owner!r}. Use one of: {', '.join(OWNERS)}")
     conn = connect_db(_db_path())
     try:
         init_trade_schema(conn)

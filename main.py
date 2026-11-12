@@ -48,6 +48,16 @@ _PORTFOLIO_SECTION_ORDER = (OWNER_A, OWNER_C, OWNER_B)
 _PORTFOLIO_DISPLAY = {OWNER_A: OWNER_A, OWNER_C: OWNER_C, OWNER_B: OWNER_B}
 
 
+def _cli_date(raw: str | None, flag: str) -> date | None:
+    """Parse a YYYY-MM-DD option, or exit with a readable message instead of a traceback."""
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        raise SystemExit(f"{flag} must be a date in YYYY-MM-DD form; got {raw!r}") from None
+
+
 def _project_dir() -> Path:
     return Path(__file__).resolve().parent
 
@@ -992,8 +1002,8 @@ def main() -> None:
                 "--trade-add option trades require --trade-ticker (OCC or underlying) plus "
                 "--trade-expiry, --trade-strike, --trade-put-call when not using a full OCC symbol"
             )
-        td = date.fromisoformat(args.trade_date) if args.trade_date else None
-        opt_exp = date.fromisoformat(args.trade_expiry) if args.trade_expiry else None
+        td = _cli_date(args.trade_date, "--trade-date")
+        opt_exp = _cli_date(args.trade_expiry, "--trade-expiry")
         trades_cli.run_trade_add(
             args.trade_fund,
             args.trade_ticker or "",

@@ -94,4 +94,8 @@ def test_init_database_creates_locked_admin(tmp_path, monkeypatch):
         conn.close()
     assert [u[0] for u in users] == ["admin"]
     assert not users[0][1]  # locked until a password is set
-    assert auth.authenticate_user(connect_db(db), "admin", "anything-at-all") is None
+    check = connect_db(db)
+    try:
+        assert auth.authenticate_user(check, "admin", "anything-at-all") is None
+    finally:
+        check.close()
