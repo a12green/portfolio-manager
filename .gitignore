@@ -17,6 +17,7 @@ Logs/
 *.eml
 *.pdf
 *.PDF
+
 *.csv
 *.CSV
 *.app
@@ -26,3 +27,6 @@ __pycache__/
 .DS_Store
 Icon
 
+# Sample data is fictional and is meant to be committed
+!sample_data/**/*.csv
+!sample_data/**/*.pdf
