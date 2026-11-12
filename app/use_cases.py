@@ -424,3 +424,28 @@ def delete_other_asset(
         return bool(delete_owner_other_asset(conn, owner.strip(), asset_type.strip()))
     finally:
         conn.close()
+
+
+def fund_trades(db_path: Path, *, fund_name: str, owner_scope: str | None = None) -> list:
+    """Every trade in a fund, oldest first. Raises ValueError for an unknown fund."""
+    from ledger.trades_db import fetch_trades_for_fund
+
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        fund = _fund_for_write(conn, fund_name, owner_scope)
+        return list(fetch_trades_for_fund(conn, fund.id))
+    finally:
+        conn.close()
+
+
+def fund_holdings(db_path: Path, *, owner: str, live: bool):
+    """Holdings listed per fund for an owner (or all owners), with cost, mark and P/L."""
+    from reports.holdings_compare import collect_fund_holdings_rows
+
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        return collect_fund_holdings_rows(conn, owner=owner, live=live, force_live=live)
+    finally:
+        conn.close()

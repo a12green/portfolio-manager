@@ -93,3 +93,24 @@ def test_other_asset_respects_owner_scope(demo_db):
         save_other_asset(demo_db, owner=OWNER_A, asset_type="x", amount=1.0, owner_scope=OWNER_B)
     with pytest.raises(PermissionError):
         delete_other_asset(demo_db, owner=OWNER_A, asset_type="x", owner_scope=OWNER_B)
+
+
+from app.use_cases import fund_holdings, fund_trades  # noqa: E402
+
+
+def test_fund_trades_are_oldest_first(demo_db):
+    trades = fund_trades(demo_db, fund_name="Fidelity")
+    dates = [t.trade_date for t in trades]
+    assert dates == sorted(dates) and len(trades) == 6
+
+
+def test_fund_trades_refuse_another_owner_and_unknown_fund(demo_db):
+    with pytest.raises(PermissionError):
+        fund_trades(demo_db, fund_name="Fidelity", owner_scope=OWNER_B)
+    with pytest.raises(ValueError, match="Unknown fund"):
+        fund_trades(demo_db, fund_name="Nope")
+
+
+def test_fund_holdings_for_owner_lists_positions(demo_db, fake_yahoo):
+    rows = fund_holdings(demo_db, owner=OWNER_A, live=False)
+    assert {r.ticker for r in rows} >= {"NVDA", "MSFT"}

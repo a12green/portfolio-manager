@@ -14,7 +14,6 @@ from reports.portfolio_data import load_portfolio_holdings
 from ledger.trades_db import (
     TradeFund,
     TradeRecord,
-    fetch_trades_for_fund,
     get_fund_by_name,
     init_trade_schema,
     list_funds,
@@ -107,20 +106,21 @@ def _fund_dict(fund: TradeFund) -> dict[str, Any]:
 
 
 def list_trades_payload(fund_name: str, *, user: "WebUser | None" = None) -> list[dict[str, Any]]:
-    conn = connect_db(trades_cli._db_path())
-    try:
-        fund = get_fund_by_name(conn, fund_name)
-        if not fund:
-            raise ValueError(f"Unknown fund {fund_name!r}")
-        if user is not None:
-            from web.auth import assert_fund_access
+    from fastapi import HTTPException
 
-            assert_fund_access(user, fund)
-        # Newest first for the Record trade screen; fetch_trades_for_fund stays
-        # chronological (ASC) since ledger replay elsewhere depends on that order.
-        return [_trade_dict(t) for t in reversed(fetch_trades_for_fund(conn, fund.id))]
-    finally:
-        conn.close()
+    from app.use_cases import fund_trades
+
+    try:
+        # Newest first for the Record trade screen; the shared read is chronological,
+        # because ledger replay elsewhere depends on that order.
+        trades = fund_trades(
+            trades_cli._db_path(),
+            fund_name=fund_name,
+            owner_scope=user.owner_scope if user is not None else None,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    return [_trade_dict(t) for t in reversed(trades)]
 
 
 def _trade_dict(t: TradeRecord) -> dict[str, Any]:

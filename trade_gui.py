@@ -1750,18 +1750,12 @@ class TradeEntryApp(tk.Tk):
         self._clear_tree(self.trade_tree)
         if not fund_name:
             return
-        from ledger.db import connect_db
-        from ledger.trades_db import fetch_trades_for_fund, get_fund_by_name, init_trade_schema
+        from app.use_cases import fund_trades
 
-        conn = connect_db(trades_cli._db_path())
         try:
-            init_trade_schema(conn)
-            fund = get_fund_by_name(conn, fund_name)
-            if not fund:
-                return
-            trades = fetch_trades_for_fund(conn, fund.id)
-        finally:
-            conn.close()
+            trades = fund_trades(trades_cli._db_path(), fund_name=fund_name)
+        except ValueError:
+            return
 
         for t in reversed(trades):
             self.trade_tree.insert("", tk.END, values=trade_row_cells(t))
@@ -1882,18 +1876,9 @@ class TradeEntryApp(tk.Tk):
             rows = []
             err: str | None = None
             try:
-                from ledger.db import connect_db
-                from reports.holdings_compare import collect_fund_holdings_rows
-                from ledger.trades_db import init_trade_schema
+                from app.use_cases import fund_holdings
 
-                conn = connect_db(trades_cli._db_path())
-                try:
-                    init_trade_schema(conn)
-                    rows = collect_fund_holdings_rows(
-                        conn, owner=owner, live=use_live, force_live=use_live
-                    )
-                finally:
-                    conn.close()
+                rows = fund_holdings(trades_cli._db_path(), owner=owner, live=use_live)
             except Exception as e:
                 err = str(e)
             self.after(0, lambda: self._apply_fund_holdings_view(job, rows, err, label, use_live))
