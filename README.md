@@ -32,6 +32,7 @@ belongs in this repository (see [Privacy](#privacy)).
 main.py                 Command-line entry point (reports, trades, snapshots)
 trades_cli.py           Trade and import commands used by main.py and the web UI
 trade_gui.py            Desktop GUI (Tk)
+app/                    Business operations shared by the web UI and the desktop GUI
 gui_logic/             Form validation, formatting and table rows for the GUI (no Tk)
 init_database.py        First-time database setup
 config.py               Loads owner names from settings.json
@@ -177,11 +178,11 @@ the test.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                       # 342 tests
+python -m pytest                       # 373 tests
 python -m pytest --cov                 # with line coverage (settings in .coveragerc)
 ```
 
-Line coverage is **81.1%** (6,421 of 7,914 statements). `trade_gui.py` is
+Line coverage is **81.8%** (6,606 of 8,074 statements). `trade_gui.py` is
 excluded because it needs a display, and it has no automated tests. The logic
 that used to live in it is in `gui_logic/` (form validation, formatting, table
 rows), which is tested without a display and counts toward the figure. The remaining gaps are mostly the
