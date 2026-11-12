@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import trades_cli
 from ledger.db import connect_db
-from reports.holdings_compare import compare_ledger_to_sheet, collect_ledger_card_positions
+from reports.holdings_compare import collect_ledger_card_positions
 from reports.portfolio_cards import HoldingCardData
 from reports.portfolio_data import load_portfolio_holdings
 from ledger.trade_ledger import build_fund_ledger_with_db
@@ -235,7 +235,6 @@ def portfolio_payload(
         market_sel=market,
         use_live=live,
         owner_label=owner_label(owner),
-        include_sheet_compare=live,
     )
     return {
         "summary": summary,
@@ -334,15 +333,9 @@ def ledger_payload(
     finally:
         conn.close()
 
-    disc = compare_ledger_to_sheet(
-        trades_cli._db_path(),
-        owner=owner,
-        fund_name=fund_filter,
-    )
     return {
         "summaries": summaries,
         "positions": positions_out,
-        "discrepancies": [_jsonable(d) for d in disc],
     }
 
 

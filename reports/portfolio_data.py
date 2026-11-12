@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from config import OWNER_A, OWNER_B, OWNER_C
-import os
-import threading
-import time
-from dataclasses import replace
+
+
 from pathlib import Path
 
 from reports.holdings_compare import collect_ledger_card_positions
@@ -18,73 +15,6 @@ from ledger.quotes import (
     price_in_fund_currency,
     resolve_day_move,
 )
-
-_SHEET_CACHE_TTL = float(os.getenv("PORTFOLIO_SHEET_CACHE_SEC", "300"))
-_sheet_cache: tuple[float, dict[str, dict[str, float]]] | None = None
-
-
-def _sheet_shares_by_owner(owner: str) -> dict[str, float]:
-    """Cached Google-sheet / CSV share counts for discrepancy highlighting."""
-    global _sheet_cache
-    now = time.time()
-    if _sheet_cache is None or now - _sheet_cache[0] >= _SHEET_CACHE_TTL:
-        merged: dict[str, dict[str, float]] = {}
-        try:
-            from main import _prepare_holdings, load_portfolio_dataframe
-
-            work = _prepare_holdings(load_portfolio_dataframe())
-            for portfolio, sub in work.groupby("Portfolio"):
-                key = str(portfolio).strip()
-                bucket: dict[str, float] = {}
-                for _, r in sub.iterrows():
-                    t = normalize_ticker(str(r["Ticker"]))
-                    bucket[t] = bucket.get(t, 0.0) + float(r["Shares"])
-                merged[key] = bucket
-        except Exception:
-            merged = {}
-        _sheet_cache = (now, merged)
-    return dict(_sheet_cache[1].get(owner.strip(), {}))
-
-
-def prewarm_sheet_cache() -> None:
-    """Load Google-sheet share counts in the background (for discrepancy flags)."""
-
-    def _run() -> None:
-        for owner in (OWNER_A, OWNER_B, OWNER_C):
-            try:
-                _sheet_shares_by_owner(owner)
-            except Exception:
-                pass
-
-    threading.Thread(target=_run, daemon=True).start()
-
-
-def apply_sheet_discrepancies(
-    cards: list[HoldingCardData],
-    sheet_shares: dict[str, float],
-) -> list[HoldingCardData]:
-    if not sheet_shares:
-        return cards
-    out: list[HoldingCardData] = []
-    for card in cards:
-        norm = normalize_ticker(card.ticker)
-        sh_sheet = sheet_shares.get(norm, 0.0)
-        tol = max(0.5, 0.005 * max(card.shares, sh_sheet))
-        disc = abs(card.shares - sh_sheet) > tol
-        out.append(replace(card, discrepancy=disc) if disc != card.discrepancy else card)
-    return out
-
-
-def sheet_shares_for_owner(owner: str) -> dict[str, float]:
-    """Public wrapper for cached sheet share counts."""
-    if owner.strip().lower() == "all":
-        merged: dict[str, float] = {}
-        for portfolio in (OWNER_A, OWNER_B, OWNER_C):
-            for ticker, shares in _sheet_shares_by_owner(portfolio).items():
-                merged[ticker] = merged.get(ticker, 0.0) + shares
-        return merged
-    return _sheet_shares_by_owner(owner)
-
 
 def _matches_port_market(market: str, market_sel: str) -> bool:
     sel = market_sel.strip()
@@ -222,7 +152,6 @@ def load_portfolio_holdings(
     market_sel: str,
     use_live: bool,
     owner_label: str,
-    include_sheet_compare: bool = False,
 ) -> tuple[list[HoldingCardData], str]:
     from ledger.db import connect_db
 
@@ -240,8 +169,6 @@ def load_portfolio_holdings(
         )
     finally:
         conn.close()
-
-    sheet_shares = _sheet_shares_by_owner(owner) if include_sheet_compare else {}
 
     if market_sel and market_sel != "All":
         positions = [p for p in positions if _matches_port_market(p.market, market_sel)]
@@ -407,9 +334,6 @@ def load_portfolio_holdings(
         stock_details = und_details if is_option else details
         mkt_for_total = price_in_fund_currency(mkt, display_cur, totals_cur, fx_rates)
         pct_port = mkt_for_total / total_mkt * 100.0 if total_mkt else 0.0
-        sh_sheet = sheet_shares.get(norm, 0.0)
-        tol = max(0.5, 0.005 * max(pos.shares, sh_sheet))
-        disc = bool(sheet_shares and pos.instrument_type != "option" and abs(pos.shares - sh_sheet) > tol)
 
         def _cv(price: float | None) -> float | None:
             return _quote_price_for_display(
@@ -458,7 +382,6 @@ def load_portfolio_holdings(
                 w52_low=_cv(stock_details.week52_low) if stock_details else None,
                 sparkline=spark,
                 previous_close=prev,
-                discrepancy=disc,
                 instrument_type=pos.instrument_type,
                 underlying=und_raw or pos.underlying,
                 strike=pos.strike,

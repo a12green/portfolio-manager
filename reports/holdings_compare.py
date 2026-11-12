@@ -3,12 +3,9 @@ from __future__ import annotations
 from config import OWNER_A, OWNER_B, OWNER_C
 from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 
-from ledger.quotes import normalize_ticker
 from ledger.trade_ledger import build_fund_ledger, build_fund_ledger_with_db
 from ledger.trades_db import (
-    fetch_mark_prices_for_owner,
     fetch_trades_for_fund,
     init_trade_schema,
     list_funds,
@@ -31,43 +28,6 @@ def _funds_in_scope(conn, owner: str, fund_name: str | None = None):
     if fund_name and fund_name.strip().lower() != "all":
         funds = [f for f in funds if f.name == fund_name.strip()]
     return funds
-
-
-@dataclass(frozen=True)
-class HoldingsDiscrepancy:
-    ticker: str
-    ledger_shares: float
-    sheet_shares: float
-    delta: float
-    scope: str
-
-
-def _share_tolerance(shares: float) -> float:
-    return max(0.5, 0.005 * abs(shares))
-
-
-def _load_sheet_shares_for_portfolio(portfolio: str) -> dict[str, float]:
-    from main import _prepare_holdings, load_portfolio_dataframe
-
-    work = _prepare_holdings(load_portfolio_dataframe())
-    sub = work[work["Portfolio"].astype(str).str.strip() == portfolio.strip()]
-    out: dict[str, float] = {}
-    for _, row in sub.iterrows():
-        ticker = normalize_ticker(str(row["Ticker"]))
-        if not ticker:
-            continue
-        out[ticker] = out.get(ticker, 0.0) + float(row["Shares"])
-    return out
-
-
-def _load_sheet_shares(owner: str) -> dict[str, float]:
-    if _owner_is_all(owner):
-        merged: dict[str, float] = {}
-        for portfolio in _ALL_OWNERS:
-            for ticker, shares in _load_sheet_shares_for_portfolio(portfolio).items():
-                merged[ticker] = merged.get(ticker, 0.0) + shares
-        return merged
-    return _load_sheet_shares_for_portfolio(owner)
 
 
 def collect_ledger_shares(
@@ -383,69 +343,3 @@ def collect_ledger_card_positions(
         )
     out.sort(key=lambda p: -(p.market_value or 0.0))
     return out
-
-
-def compare_ledger_to_sheet(
-    db_path: Path,
-    *,
-    owner: str,
-    fund_name: str | None = None,
-    as_of: date | None = None,
-) -> list[HoldingsDiscrepancy]:
-    """
-    Compare trade-ledger share counts to the Google sheet (reference only).
-    Ledger amounts are authoritative; sheet is used only to surface mismatches.
-    """
-    from ledger.db import connect_db
-
-    if fund_name and fund_name.strip().lower() != "all":
-        scope = fund_name.strip()
-    elif _owner_is_all(owner):
-        scope = "All owners (all funds)"
-    else:
-        scope = f"{owner} (all funds)"
-
-    conn = connect_db(db_path)
-    try:
-        ledger = collect_ledger_shares(conn, owner=owner, fund_name=fund_name, as_of=as_of)
-    finally:
-        conn.close()
-
-    try:
-        sheet = _load_sheet_shares(owner)
-    except Exception:
-        return []
-
-    tickers = sorted(set(ledger) | set(sheet))
-    out: list[HoldingsDiscrepancy] = []
-    for ticker in tickers:
-        led = ledger.get(ticker, 0.0)
-        sh = sheet.get(ticker, 0.0)
-        if led <= 0 and sh <= 0:
-            continue
-        delta = led - sh
-        tol = _share_tolerance(max(led, sh))
-        if abs(delta) <= tol:
-            continue
-        out.append(
-            HoldingsDiscrepancy(
-                ticker=ticker,
-                ledger_shares=led,
-                sheet_shares=sh,
-                delta=delta,
-                scope=scope,
-            )
-        )
-    out.sort(key=lambda d: (-abs(d.delta), d.ticker))
-    return out
-
-
-def format_discrepancy_summary(discrepancies: list[HoldingsDiscrepancy]) -> str:
-    if not discrepancies:
-        return "Sheet check: no share-count discrepancies."
-    parts = []
-    for d in discrepancies[:8]:
-        parts.append(f"{d.ticker} ledger {d.ledger_shares:g} vs sheet {d.sheet_shares:g} ({d.delta:+g})")
-    more = len(discrepancies) - len(parts)
-    tail = f" · +{more} more" if more > 0 else ""
-    return f"Sheet discrepancies ({discrepancies[0].scope}): " + "; ".join(parts) + tail

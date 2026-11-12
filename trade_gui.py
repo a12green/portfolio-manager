@@ -176,15 +176,14 @@ def _setup_tree_stripes(tree: ttk.Treeview, *, avg_colors: bool = False) -> None
 
     ttk.Treeview resolves conflicting tag options by which tag was configured
     *first* (not the order tags are listed on an item, and not last-configured
-    as you'd expect) — so semantic tags (P&L color, discrepancy highlight) must
-    be configured before "stripe", or a striped odd-numbered row would always
-    show the plain stripe color instead of its green/red/amber highlight.
+    as you'd expect) — so semantic tags (P&L color) must be configured before
+    "stripe", or a striped odd-numbered row would always show the plain stripe
+    color instead of its green/red highlight.
     """
     c = ttkb.Style().colors
     if avg_colors:
         tree.tag_configure("avg_good", background=c.success, foreground=_PL_TAG_FG)
         tree.tag_configure("avg_bad", background=c.danger, foreground=_PL_TAG_FG)
-        tree.tag_configure("sheet_disc", background="#3d2c00", foreground="#f0c674")
     tree.tag_configure("stripe", background=c.active)
 
 
@@ -248,7 +247,7 @@ def _fmt_price_cell(amount: float | None, location: str = "") -> str:
 
 
 def _holding_market(loc: str, ticker: str = "") -> str:
-    """AU for Australian listings; otherwise US (sheet Location convention)."""
+    """AU for Australian listings; otherwise US (holdings file Location convention)."""
     loc = str(loc or "").strip().upper()
     tick = str(ticker or "").strip().upper()
     if loc in ("AUS", "AUD", "AU") or tick.startswith("ASX:"):
@@ -289,7 +288,6 @@ class TradeEntryApp(tk.Tk):
         self._trends_job = 0
         self._live_poll_after_id: str | None = None
         self._portfolio_job = 0
-        self._portfolio_sheet_job = 0
         self._portfolio_live_on_show = False
         # Trees whose stripe/P&L tag colors must be re-applied on a theme switch.
         self._striped_trees: list[tuple[ttk.Treeview, bool]] = []
@@ -298,12 +296,6 @@ class TradeEntryApp(tk.Tk):
         self.refresh_funds(clear_caches=False)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._schedule_live_quote_poll()
-        try:
-            from reports.portfolio_data import prewarm_sheet_cache
-
-            prewarm_sheet_cache()
-        except Exception:
-            pass
 
     def _build_ui(self) -> None:
         self.status_var = tk.StringVar(value="Ready")
@@ -591,13 +583,9 @@ class TradeEntryApp(tk.Tk):
 
         from reports.portfolio_cards import PortfolioCardsView
 
-        sheet_box = ttk.LabelFrame(
-            root,
-            text="Holdings (trade ledger — amber border = share count mismatch vs sheet)",
-            padding=0,
-        )
-        sheet_box.pack(fill=tk.BOTH, expand=True)
-        self.portfolio_cards = PortfolioCardsView(sheet_box)
+        holdings_box = ttk.LabelFrame(root, text="Holdings (trade ledger)", padding=0)
+        holdings_box.pack(fill=tk.BOTH, expand=True)
+        self.portfolio_cards = PortfolioCardsView(holdings_box)
         self.portfolio_cards.pack(fill=tk.BOTH, expand=True)
 
     def _build_ledger_detail_tab(self) -> None:
@@ -645,23 +633,6 @@ class TradeEntryApp(tk.Tk):
         self.book_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         bscroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        disc_box = ttk.LabelFrame(root, text="Share count discrepancies (ledger vs sheet)", padding=6)
-        disc_box.pack(fill=tk.BOTH, expand=True)
-
-        dcols = ("ticker", "ledger", "sheet", "delta", "scope")
-        self.disc_tree = ttk.Treeview(disc_box, columns=dcols, show="headings", height=6)
-        for c, w, h in zip(
-            dcols,
-            (72, 88, 88, 72, 220),
-            ("Ticker", "Ledger", "Sheet", "Δ", "Scope"),
-        ):
-            self.disc_tree.heading(c, text=h)
-            self.disc_tree.column(c, width=w, anchor=tk.E if c != "ticker" else tk.W)
-        self.disc_tree.tag_configure("disc", background="#3d2c00", foreground="#f0c674")
-        dscroll = ttk.Scrollbar(disc_box, orient=tk.VERTICAL, command=self.disc_tree.yview)
-        self.disc_tree.configure(yscrollcommand=dscroll.set)
-        self.disc_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        dscroll.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _build_fund_holdings_tab(self) -> None:
         pad = {"padx": 8, "pady": 4}
@@ -1773,12 +1744,6 @@ class TradeEntryApp(tk.Tk):
         conn = connect_db(trades_cli._db_path())
         try:
             init_trade_schema(conn)
-            try:
-                from ledger.fund_cash_reconcile import sync_opening_cash_from_fund_list
-
-                sync_opening_cash_from_fund_list(conn)
-            except Exception:
-                pass
             funds = list_funds(conn)
             manual = fetch_fund_manual_balances(conn)
             ledger_cache: dict[int, tuple[float, float, float] | None] = {}
@@ -2005,7 +1970,6 @@ class TradeEntryApp(tk.Tk):
                     market_sel=market_sel,
                     use_live=use_live,
                     owner_label=label,
-                    include_sheet_compare=use_live,
                 )
                 self._holdings_loaded = True
             except Exception as e:
@@ -2043,37 +2007,9 @@ class TradeEntryApp(tk.Tk):
             self.status_var.set(f"Live prices updated · {datetime.now():%H:%M}")
         else:
             self.status_var.set(f"Portfolio view updated for {label}.")
-        if not use_live and cards:
-            self._refresh_portfolio_sheet_flags(job, owner, cards)
         if not use_live and self._portfolio_live_on_show:
             self._portfolio_live_on_show = False
             self.refresh_portfolio_view(use_live=True)
-
-    def _refresh_portfolio_sheet_flags(self, job: int, owner: str, cards) -> None:
-        """Background sheet compare for amber discrepancy rows (non-blocking)."""
-        self._portfolio_sheet_job += 1
-        sheet_job = self._portfolio_sheet_job
-        import threading
-
-        def worker() -> None:
-            try:
-                from reports.portfolio_data import apply_sheet_discrepancies, sheet_shares_for_owner
-
-                sheet_shares = sheet_shares_for_owner(owner)
-                updated = apply_sheet_discrepancies(cards, sheet_shares)
-            except Exception:
-                return
-            self.after(
-                0,
-                lambda: self._apply_portfolio_sheet_flags(job, sheet_job, updated),
-            )
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _apply_portfolio_sheet_flags(self, portfolio_job: int, sheet_job: int, cards) -> None:
-        if portfolio_job != self._portfolio_job or sheet_job != self._portfolio_sheet_job:
-            return
-        self.portfolio_cards.set_holdings(cards)
 
     def refresh_ledger_detail_view(self, *, use_live: bool = False) -> None:
         owner = self.port_owner_var.get().strip()
@@ -2081,7 +2017,6 @@ class TradeEntryApp(tk.Tk):
         label = _port_owner_label(owner)
 
         self._clear_tree(self.book_tree)
-        self._clear_tree(self.disc_tree)
 
         summary_parts: list[str] = []
 
@@ -2095,12 +2030,6 @@ class TradeEntryApp(tk.Tk):
             conn = connect_db(trades_cli._db_path())
             try:
                 init_trade_schema(conn)
-                try:
-                    from ledger.fund_cash_reconcile import sync_opening_cash_from_fund_list
-
-                    sync_opening_cash_from_fund_list(conn)
-                except Exception:
-                    pass
                 live_fund = " · live marks" if use_live and live_quotes_enabled(force=True) else ""
 
                 if fund_filter:
@@ -2190,41 +2119,6 @@ class TradeEntryApp(tk.Tk):
                 conn.close()
         except Exception as e:
             summary_parts.append(f"Trade ledger: unavailable ({e})")
-
-        try:
-            from reports.holdings_compare import compare_ledger_to_sheet, format_discrepancy_summary
-
-            owner_disc = compare_ledger_to_sheet(trades_cli._db_path(), owner=owner)
-            summary_parts.append(format_discrepancy_summary(owner_disc))
-            disc_rows = list(owner_disc)
-            if fund_filter:
-                disc_rows.extend(
-                    compare_ledger_to_sheet(
-                        trades_cli._db_path(),
-                        owner=owner,
-                        fund_name=fund_filter,
-                    )
-                )
-            shown: set[tuple[str, str]] = set()
-            for d in disc_rows:
-                key = (d.ticker, d.scope)
-                if key in shown:
-                    continue
-                shown.add(key)
-                self.disc_tree.insert(
-                    "",
-                    tk.END,
-                    tags=("disc",),
-                    values=(
-                        d.ticker,
-                        f"{d.ledger_shares:g}",
-                        f"{d.sheet_shares:g}",
-                        f"{d.delta:+g}",
-                        d.scope,
-                    ),
-                )
-        except Exception as e:
-            summary_parts.append(f"Sheet discrepancy check: unavailable ({e})")
 
         self.ledger_summary_var.set("  |  ".join(summary_parts))
         self.status_var.set(f"Ledger detail updated for {label}.")

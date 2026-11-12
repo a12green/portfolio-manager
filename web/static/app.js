@@ -385,8 +385,7 @@ async function loadPortfolio(live = false) {
   tbody.innerHTML = "";
   data.holdings.forEach((h, i) => {
     const tr = document.createElement("tr");
-    if (h.discrepancy) tr.classList.add("disc");
-    else if (i % 2) tr.classList.add("stripe");
+    if (i % 2) tr.classList.add("stripe");
     const isOpt = h.instrument_type === "option";
     const qty = isOpt ? `${h.shares} ct` : String(h.shares);
     const ctx = { isOpt, qty, dash: "—" };
@@ -445,14 +444,6 @@ async function loadLedger() {
         `<tr><td class="ticker">${esc(p.display_name || p.ticker)}</td><td>${esc(p.shares)}</td><td>${esc(fmtMoney(p.avg_cost))}</td><td>${esc(fmtMoney(p.mark_price))}</td><td>${esc(fmtMoney(p.market_value))}</td><td class="${esc(plClass(p.unrealized_pl))}">${esc(fmtMoney(p.unrealized_pl))}</td><td>${esc(p.realized_pl != null ? fmtMoney(p.realized_pl) : "—")}</td></tr>`
     )
     .join("");
-  $("#disc-table tbody").innerHTML = data.discrepancies.length
-    ? data.discrepancies
-        .map(
-          (d) =>
-            `<tr class="disc"><td>${esc(d.ticker)}</td><td>${esc(d.ledger_shares)}</td><td>${esc(d.sheet_shares)}</td><td>${esc(d.delta)}</td><td>${esc(d.scope)}</td></tr>`
-        )
-        .join("")
-    : `<tr><td colspan="5">No discrepancies</td></tr>`;
   setStatus("Ledger updated");
 }
 

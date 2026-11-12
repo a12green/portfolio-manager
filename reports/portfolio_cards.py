@@ -14,7 +14,6 @@ _CARD_BORDER = "#30363d"
 _FG = "#ffffff"
 _GOOD = "#3fb950"
 _BAD = "#f85149"
-_DISC_BG = "#3d2c00"
 _SPARK_GOOD = "#3fb950"
 _SPARK_BAD = "#f85149"
 _SPARK_FILL_GOOD = "#238636"
@@ -70,7 +69,6 @@ class HoldingCardData:
     w52_low: float | None = None
     sparkline: tuple[float, ...] | None = None
     previous_close: float | None = None
-    discrepancy: bool = False
     instrument_type: str = "stock"
     underlying: str | None = None
     strike: float | None = None
@@ -393,8 +391,6 @@ class PortfolioCardsView(ttk.Frame):
 
         for idx, d in enumerate(rows):
             bg = _STRIPE_BG if idx % 2 else _CARD_BG
-            if d.discrepancy:
-                bg = _DISC_BG
 
             price_diff = (d.last - d.avg_cost) if d.avg_cost > 0 else None
             values: dict[str, str] = {
