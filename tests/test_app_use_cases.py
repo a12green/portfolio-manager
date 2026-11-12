@@ -65,3 +65,45 @@ def test_fund_summary_text_formats_in_fund_currency():
     fund = SimpleNamespace(name="Super A", currency="AUD", cash=100.0, nav=7000.0, roi_pct=3.5)
     assert fund_summary_text(fund) == "Fund “Super A”: cash A$100.00 · NAV A$7,000.00 · ROI +3.50%"
     assert fund_summary_text(fund, " · live marks").endswith("· live marks")
+
+
+from types import SimpleNamespace as _NS  # noqa: E402
+from app.use_cases import heatmap, market_movers  # noqa: E402
+from gui_logic.tables import fmt_volume, mover_row_cells  # noqa: E402
+
+
+def test_heatmap_view_for_all_owners_and_day_colouring(demo_db, fake_yahoo):
+    view = heatmap(demo_db, owner="All", fund="All", color_by="day", live=False)
+    assert view.color_by == "day"
+    assert view.owner is None and view.fund is None
+    assert view.total_usd > 0
+    assert len(view.tiles) >= 1
+
+
+def test_heatmap_colour_mode_defaults_to_overall(demo_db, fake_yahoo):
+    view = heatmap(demo_db, owner=OWNER_A, fund=None, color_by="unrealised", live=False)
+    assert view.color_by == "overall"
+    assert view.owner == OWNER_A
+
+
+def test_market_movers_normalises_the_market_code(fake_yahoo):
+    mkt, gainers, losers = market_movers("United States", force=True)
+    assert mkt == "US"
+    assert gainers[0].symbol == "NVDA" and losers[0].symbol == "XYZ"
+    mkt, _g, _l = market_movers("Australia", force=True)
+    assert mkt == "AU"
+
+
+def test_volume_formatting_scales():
+    assert fmt_volume(None) == "—"
+    assert fmt_volume(999) == "999"
+    assert fmt_volume(12_300) == "12.3K"
+    assert fmt_volume(4_500_000) == "4.50M"
+    assert fmt_volume(2_000_000_000) == "2.00B"
+
+
+def test_mover_row_cells_formats_each_field():
+    row = _NS(rank=1, symbol="NVDA", name="NVIDIA", price=180.0, change=3.0, change_pct=1.7, volume=4_500_000)
+    assert mover_row_cells(row, "US") == ("1", "NVDA", "NVIDIA", "$180.00", "$3.00", "+1.70%", "4.50M")
+    gap = _NS(rank=2, symbol="X", name="Y", price=None, change=None, change_pct=None, volume=None)
+    assert mover_row_cells(gap, "AUS")[3:] == ("—", "—", "—", "—")

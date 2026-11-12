@@ -184,3 +184,30 @@ def fund_summary_text(fund: Any, live_note: str = "") -> str:
         f"Fund “{fund.name}”: cash {fmt_money(fund.cash, cur)} · "
         f"NAV {fmt_money(fund.nav, cur)} · ROI {roi}{live_note}"
     )
+
+
+def fmt_volume(vol: int | None) -> str:
+    if vol is None:
+        return "—"
+    if vol >= 1_000_000_000:
+        return f"{vol / 1_000_000_000:.2f}B"
+    if vol >= 1_000_000:
+        return f"{vol / 1_000_000:.2f}M"
+    if vol >= 1_000:
+        return f"{vol / 1_000:.1f}K"
+    return f"{vol:,}"
+
+
+def mover_row_cells(row: Any, loc: str) -> tuple[str, ...]:
+    """One row of a movers table. ``loc`` is the currency location code ("US" or "AUS")."""
+    from gui_logic.formatting import fmt_money, fmt_pct
+
+    return (
+        str(row.rank),
+        row.symbol,
+        row.name,
+        fmt_money(row.price, loc) if row.price is not None else "—",
+        fmt_money(row.change, loc) if row.change is not None else "—",
+        fmt_pct(row.change_pct) if row.change_pct is not None else "—",
+        fmt_volume(row.volume),
+    )

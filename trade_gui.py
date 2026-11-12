@@ -23,14 +23,13 @@ from ttkbootstrap.style.theme import Theme
 import trades_cli
 
 from gui_logic.formatting import (
-    fmt_money as _fmt_money,
-    fmt_pct as _fmt_pct,
     pl_row_tag as _pl_row_tag,
     port_owner_label,
     tree_row_tags as _tree_row_tags,
 )
 from gui_logic.tables import (
     balance_row_cells,
+    mover_row_cells,
     fund_summary_text,
     ledger_position_cells,
     trade_row_cells,
@@ -1259,18 +1258,6 @@ class TradeEntryApp(tk.Tk):
     def _movers_market_code(self) -> str:
         return "AU" if self.movers_market_var.get().strip().startswith("Austral") else "US"
 
-    @staticmethod
-    def _fmt_volume(vol: int | None) -> str:
-        if vol is None:
-            return "—"
-        if vol >= 1_000_000_000:
-            return f"{vol / 1_000_000_000:.2f}B"
-        if vol >= 1_000_000:
-            return f"{vol / 1_000_000:.2f}M"
-        if vol >= 1_000:
-            return f"{vol / 1_000:.1f}K"
-        return f"{vol:,}"
-
     def refresh_market_movers(self, *, force: bool = False) -> None:
         if self._movers_fetching:
             return
@@ -1287,9 +1274,9 @@ class TradeEntryApp(tk.Tk):
             gainers = []
             losers = []
             try:
-                from ledger.market_movers import fetch_market_movers
+                from app.use_cases import market_movers
 
-                gainers, losers = fetch_market_movers(market, force=force)  # type: ignore[arg-type]
+                _mkt, gainers, losers = market_movers(market, force=force)
             except Exception as e:
                 err = str(e)
             self.after(0, lambda: self._apply_market_movers(gainers, losers, market, err))
@@ -1310,22 +1297,11 @@ class TradeEntryApp(tk.Tk):
             for item in tree.get_children():
                 tree.delete(item)
             for idx, row in enumerate(rows):
-                price = _fmt_money(row.price, loc) if row.price is not None else "—"
-                change = _fmt_money(row.change, loc) if row.change is not None else "—"
-                pct = _fmt_pct(row.change_pct) if row.change_pct is not None else "—"
                 tree.insert(
                     "",
                     tk.END,
                     tags=_tree_row_tags(idx),
-                    values=(
-                        row.rank,
-                        row.symbol,
-                        row.name,
-                        price,
-                        change,
-                        pct,
-                        self._fmt_volume(row.volume),
-                    ),
+                    values=mover_row_cells(row, loc),
                 )
 
         updated = datetime.now().strftime("%H:%M")
@@ -1370,23 +1346,23 @@ class TradeEntryApp(tk.Tk):
 
         def worker() -> None:
             err: str | None = None
-            tiles = []
+            view = None
             try:
-                from reports.heatmap_data import collect_heatmap_tiles
+                from app.use_cases import heatmap
 
-                tiles = collect_heatmap_tiles(
+                view = heatmap(
                     trades_cli._db_path(),
                     owner=owner_arg,
-                    fund_name=fund_arg,
+                    fund=fund_arg,
+                    color_by=color_by,
                     live=use_live,
-                    color_by=color_by,  # type: ignore[arg-type]
                 )
             except Exception as e:
                 err = str(e)
             self.after(
                 0,
                 lambda: self._apply_heatmap_result(
-                    job, tiles, owner_sel, fund_sel, color_by, use_live, err
+                    job, view, owner_sel, fund_sel, color_by, use_live, err
                 ),
             )
 
@@ -1395,7 +1371,7 @@ class TradeEntryApp(tk.Tk):
     def _apply_heatmap_result(
         self,
         job: int,
-        tiles,
+        view,
         owner_sel: str,
         fund_sel: str,
         color_by: str,
@@ -1425,6 +1401,7 @@ class TradeEntryApp(tk.Tk):
             plt.close(self._heatmap_fig)
             self._heatmap_fig = None
 
+        tiles = view.tiles
         try:
             self._heatmap_fig = build_heatmap_figure(tiles, title=title, color_by=color_by, palette=chart_palette())  # type: ignore[arg-type]
             self._heatmap_canvas = FigureCanvasTkAgg(self._heatmap_fig, master=self.hm_chart_frame)
@@ -1435,14 +1412,10 @@ class TradeEntryApp(tk.Tk):
             self.status_var.set(f"Heat map error: {e}")
             return
 
-        try:
-            from ledger.quotes import live_quotes_enabled, sum_tiles_value_usd
+        from ledger.quotes import live_quotes_enabled
 
-            total_usd = sum_tiles_value_usd(tiles, force_fx=use_live)
-            live_note = " · Yahoo Finance (delayed)" if live_quotes_enabled() else ""
-        except ImportError:
-            total_usd = sum(t.value for t in tiles)
-            live_note = ""
+        total_usd = view.total_usd
+        live_note = " · Yahoo Finance (delayed)" if live_quotes_enabled() else ""
         merged_note = " · tickers merged across funds" if fund_sel == "All" else ""
         color_label = "day P/L %" if color_by == "day" else "unrealized P/L %"
         self.hm_summary_var.set(

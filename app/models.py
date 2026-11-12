@@ -33,3 +33,12 @@ class LedgerDetail:
     positions: list[LedgerPosition] = field(default_factory=list)
     funds: list[FundSummary] = field(default_factory=list)
     fund_filter: str | None = None
+
+
+@dataclass(frozen=True)
+class HeatmapView:
+    tiles: list = field(default_factory=list)
+    color_by: str = "overall"
+    total_usd: float = 0.0
+    owner: str | None = None
+    fund: str | None = None

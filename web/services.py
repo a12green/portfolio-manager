@@ -283,33 +283,24 @@ def heatmap_payload(
     color_by: str,
     live: bool,
 ) -> dict[str, Any]:
-    from reports.heatmap_data import collect_heatmap_tiles, tile_pl_for_color
-    from ledger.quotes import sum_tiles_value_usd
+    from app.use_cases import heatmap
+    from reports.heatmap_data import tile_pl_for_color
 
-    owner_arg = None if owner.lower() == "all" else owner
-    fund_arg = None if not fund or fund.lower() == "all" else fund
-    color = "day" if color_by.lower().startswith("day") else "overall"
-    tiles = collect_heatmap_tiles(
-        trades_cli._db_path(),
-        owner=owner_arg,
-        fund_name=fund_arg,
-        live=live,
-    )
-    total_usd = sum_tiles_value_usd(tiles, force_fx=live)
+    view = heatmap(trades_cli._db_path(), owner=owner, fund=fund, color_by=color_by, live=live)
     return {
-        "total_usd": total_usd,
-        "color_by": color,
+        "total_usd": view.total_usd,
+        "color_by": view.color_by,
         "tiles": [
             {
                 "ticker": t.ticker,
                 "fund_name": t.fund_name,
                 "owner": t.owner,
                 "value": t.value,
-                "pl_pct": tile_pl_for_color(t, color),
+                "pl_pct": tile_pl_for_color(t, view.color_by),
                 "shares": t.shares,
                 "currency": t.currency,
             }
-            for t in tiles
+            for t in view.tiles
         ],
     }
 

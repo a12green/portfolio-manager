@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from app.models import FundSummary, LedgerDetail, LedgerPosition
+from app.models import FundSummary, HeatmapView, LedgerDetail, LedgerPosition
 from ledger.db import connect_db
 from ledger.option_symbols import display_option_label
 from ledger.trade_ledger import build_fund_ledger_with_db
@@ -111,3 +111,46 @@ def _owner_ledger(conn, owner: str, *, live: bool, as_of: date) -> LedgerDetail:
                         nav=result.nav, roi_pct=result.fund_roi_pct)
         )
     return LedgerDetail(positions=positions, funds=summaries)
+
+
+def heatmap(
+    db_path: Path,
+    *,
+    owner: str | None,
+    fund: str | None,
+    color_by: str,
+    live: bool,
+) -> HeatmapView:
+    """Heat-map tiles for an owner or fund, the colour mode, and the total value in USD.
+
+    ``owner`` and ``fund`` of None (or "All") mean no filter. ``color_by`` starting with
+    "day" colours by today's change; anything else colours by overall P/L.
+    """
+
+    from ledger.quotes import sum_tiles_value_usd
+    from reports.heatmap_data import collect_heatmap_tiles
+
+    owner_arg = None if _is_all(owner) else owner.strip()
+    fund_arg = None if _is_all(fund) else fund.strip()
+    mode = "day" if color_by.lower().startswith("day") else "overall"
+    tiles = collect_heatmap_tiles(db_path, owner=owner_arg, fund_name=fund_arg, live=live, color_by=mode)
+    return HeatmapView(
+        tiles=list(tiles),
+        color_by=mode,
+        total_usd=sum_tiles_value_usd(tiles, force_fx=live),
+        owner=owner_arg,
+        fund=fund_arg,
+    )
+
+
+def market_movers(market: str, *, force: bool = False):
+    """Top gainers and losers for "AU" or "US". Raises if the quote provider cannot be reached.
+
+    Callers decide how to show a failure: the web payload returns an empty list with an
+    "unavailable" flag, and the GUI shows a message box.
+    """
+    from ledger.market_movers import fetch_market_movers
+
+    mkt = "AU" if market.upper().startswith("AU") or market.lower().startswith("aust") else "US"
+    gainers, losers = fetch_market_movers(mkt, force=force)  # type: ignore[arg-type]
+    return mkt, list(gainers), list(losers)
