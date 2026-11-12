@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Portfolio Manager</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="auth-overlay" class="show">
+    <div id="auth-box">
+      <h2>Sign in</h2>
+      <p class="auth-hint">Portfolio access is limited to your owner account.</p>
+      <label>Username
+        <input type="text" id="login-user" autocomplete="username" autocapitalize="none" />
+      </label>
+      <label>Password
+        <input type="password" id="login-pass" autocomplete="current-password" />
+      </label>
+      <p id="login-error" class="login-error" hidden></p>
+      <button class="primary" id="login-submit" style="margin-top: 12px;">Sign in</button>
+      <p class="auth-links"><button type="button" class="linkish" id="forgot-open">Forgot password?</button></p>
+    </div>
+  </div>
+
+  <div id="forgot-overlay" class="dialog-overlay">
+    <div class="dialog-box">
+      <h2>Reset your password</h2>
+      <p class="auth-hint">Enter the email address on your account. If it is registered, we will send a reset link.</p>
+      <label>Email address
+        <input type="email" id="forgot-email" autocomplete="email" autocapitalize="none" />
+      </label>
+      <p id="forgot-error" class="login-error" hidden></p>
+      <p id="forgot-success" class="pwd-success" hidden></p>
+      <div class="pwd-actions">
+        <button class="primary" id="forgot-submit">Send reset link</button>
+        <button type="button" class="ghost" id="forgot-cancel">Back to sign in</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="reset-overlay" class="dialog-overlay">
+    <div class="dialog-box">
+      <h2>Choose a new password</h2>
+      <label>New password
+        <input type="password" id="reset-new" autocomplete="new-password" />
+      </label>
+      <label>Confirm new password
+        <input type="password" id="reset-confirm" autocomplete="new-password" />
+      </label>
+      <p id="reset-error" class="login-error" hidden></p>
+      <p id="reset-success" class="pwd-success" hidden></p>
+      <div class="pwd-actions">
+        <button class="primary" id="reset-submit">Set new password</button>
+        <button type="button" class="ghost" id="reset-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="account-overlay" class="dialog-overlay">
+    <div class="dialog-box">
+      <h2>Account</h2>
+      <p class="auth-hint" id="account-username"></p>
+      <label>Display name
+        <input type="text" id="account-name" maxlength="80" autocomplete="name" />
+      </label>
+      <label>Email address (used for password resets)
+        <input type="email" id="account-email" autocomplete="email" autocapitalize="none" />
+      </label>
+      <label>Current password (only needed to change the email address)
+        <input type="password" id="account-password" autocomplete="current-password" />
+      </label>
+      <p id="account-error" class="login-error" hidden></p>
+      <p id="account-success" class="pwd-success" hidden></p>
+      <div class="pwd-actions">
+        <button class="primary" id="account-save">Save</button>
+        <button type="button" class="ghost" id="account-cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pwd-overlay">
+    <div id="pwd-box">
+      <h2>Change password</h2>
+      <label>Current password
+        <input type="password" id="pwd-current" autocomplete="current-password" />
+      </label>
+      <label>New password
+        <input type="password" id="pwd-new" autocomplete="new-password" />
+      </label>
+      <label>Confirm new password
+        <input type="password" id="pwd-confirm" autocomplete="new-password" />
+      </label>
+      <p id="pwd-error" class="login-error" hidden></p>
+      <p id="pwd-success" class="pwd-success" hidden></p>
+      <div class="pwd-actions">
+        <button class="primary" id="pwd-submit">Update password</button>
+        <button type="button" class="ghost" id="pwd-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="site-chrome">
+  <header>
+    <h1>Portfolio Manager</h1>
+    <span id="user-label"></span>
+    <button type="button" id="account-btn" class="ghost" hidden>Account</button>
+    <button type="button" id="change-pwd-btn" class="ghost" hidden>Change password</button>
+    <button type="button" id="logout-btn" class="ghost" hidden>Sign out</button>
+    <span id="status">Ready</span>
+  </header>
+
+  <nav id="tabs">
+    <button data-tab="portfolio" class="active">Current portfolio</button>
+    <button data-tab="trades">Record trade</button>
+    <button data-tab="ledger">Ledger detail</button>
+    <button data-tab="balances">Fund balances</button>
+    <button data-tab="trends">Fund trends</button>
+    <button data-tab="net-worth">Net worth</button>
+    <button data-tab="heatmap">Heat map</button>
+    <button data-tab="movers">Market movers</button>
+  </nav>
+  </div>
+
+  <main>
+    <section id="panel-portfolio" class="tab-panel active">
+      <div class="toolbar">
+        <label>Owner <select id="port-owner"></select></label>
+        <label>Fund <select id="port-fund"></select></label>
+        <label>Market <select id="port-market"></select></label>
+        <button class="primary" id="port-refresh">Refresh</button>
+        <button class="primary" id="port-live">Live prices</button>
+      </div>
+      <p class="summary" id="port-summary">Loading…</p>
+      <div class="table-wrap">
+        <table id="port-table">
+          <thead>
+            <tr></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="panel-trades" class="tab-panel">
+      <div class="card" style="margin-bottom: 16px;">
+        <h3>New fund</h3>
+        <div class="form-grid">
+          <label>Name <input id="fund-name" /></label>
+          <label>Owner <select id="fund-owner"></select></label>
+          <label>Opening cash <input id="fund-cash" type="number" value="0" step="0.01" /></label>
+          <label>Currency <select id="fund-currency"></select></label>
+        </div>
+        <button class="primary" id="fund-create">Create fund</button>
+      </div>
+      <div class="card">
+        <h3>Record trade</h3>
+        <div class="form-grid">
+          <label>Fund <select id="trade-fund"></select></label>
+          <label>Date <input id="trade-date" type="date" /></label>
+          <label>Instrument <select id="trade-instrument"><option value="stock">Stock</option><option value="option">Option</option></select></label>
+          <label id="trade-ticker-label">Ticker <input id="trade-ticker" /></label>
+          <label>Side <select id="trade-side"><option value="buy">Buy</option><option value="sell">Sell</option></select></label>
+          <label id="trade-qty-label">Shares <input id="trade-shares" type="number" step="any" /></label>
+          <label id="trade-price-label">Price <input id="trade-price" type="number" step="any" /></label>
+          <label>Fees <input id="trade-fees" type="number" value="0" step="any" /></label>
+        </div>
+        <div id="trade-option-fields" class="form-grid" hidden>
+          <label>Expiry <input id="trade-expiry" type="date" /></label>
+          <label>Strike <input id="trade-strike" type="number" step="any" /></label>
+          <label>Type <select id="trade-put-call"><option value="call">Call</option><option value="put">Put</option></select></label>
+        </div>
+        <label style="width: 100%; margin-bottom: 10px;">Notes <input id="trade-notes" style="width: 100%;" /></label>
+        <button class="primary" id="trade-save">Save trade</button>
+      </div>
+      <div class="table-wrap" style="margin-top: 16px;">
+        <table id="trade-table">
+          <thead><tr><th>ID</th><th>Date</th><th>Type</th><th>Side</th><th>Symbol</th><th>Qty</th><th>Price</th><th>Fees</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="panel-ledger" class="tab-panel">
+      <p class="summary" style="color: var(--muted);">Uses Owner and Fund from Current portfolio.</p>
+      <div class="toolbar">
+        <button class="primary" id="ledger-refresh">Refresh ledger</button>
+      </div>
+      <p class="summary" id="ledger-summary"></p>
+      <h3 style="font-size: 0.95rem;">Positions</h3>
+      <div class="table-wrap" style="margin-bottom: 16px;">
+        <table id="ledger-table">
+          <thead><tr><th>Ticker</th><th>Shares</th><th>Avg cost</th><th>Mark</th><th>Value</th><th>Unrealized</th><th>Realized</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3 style="font-size: 0.95rem;">Share count discrepancies (vs sheet)</h3>
+      <div class="table-wrap">
+        <table id="disc-table">
+          <thead><tr><th>Ticker</th><th>Ledger</th><th>Sheet</th><th>Delta</th><th>Scope</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="panel-heatmap" class="tab-panel">
+      <div class="toolbar">
+        <label>Owner <select id="hm-owner"></select></label>
+        <label>Fund <select id="hm-fund"><option>All</option></select></label>
+        <label>Colour <select id="hm-color"><option value="overall">Overall P/L</option><option value="day">Day P/L</option></select></label>
+        <button class="primary" id="hm-refresh">Refresh</button>
+      </div>
+      <p class="summary" id="hm-summary"></p>
+      <div id="heatmap" class="heatmap-grid"></div>
+    </section>
+
+    <section id="panel-movers" class="tab-panel">
+      <div class="toolbar">
+        <label>Market
+          <select id="movers-market">
+            <option>United States</option>
+            <option>Australia</option>
+          </select>
+        </label>
+        <button class="primary" id="movers-refresh">Refresh</button>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Top gainers</h3>
+          <div class="table-wrap"><table id="gainers-table"><thead><tr><th>#</th><th>Symbol</th><th>Name</th><th>Last</th><th>Chg %</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card">
+          <h3>Top losers</h3>
+          <div class="table-wrap"><table id="losers-table"><thead><tr><th>#</th><th>Symbol</th><th>Name</th><th>Last</th><th>Chg %</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-balances" class="tab-panel">
+      <div class="toolbar">
+        <label>Owner <select id="bal-owner"></select></label>
+        <button class="primary" id="bal-refresh">Refresh</button>
+      </div>
+      <p class="summary" id="bal-summary"></p>
+      <div class="table-wrap">
+        <table id="bal-table">
+          <thead>
+            <tr><th>Fund</th><th>Currency</th><th>Balance</th><th>USD Value</th><th>As of</th><th>Source</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card" style="margin-top: 16px;">
+        <h3>Update manual balance</h3>
+        <div class="form-grid">
+          <label>Fund <select id="manual-fund"></select></label>
+          <label>NAV <input id="manual-nav" type="number" step="any" /></label>
+          <label>Date <input id="manual-date" type="date" /></label>
+        </div>
+        <button class="primary" id="manual-save">Save balance</button>
+      </div>
+    </section>
+
+    <section id="panel-trends" class="tab-panel">
+      <div class="toolbar">
+        <label>Owner <select id="trends-owner"></select></label>
+        <label>Fund <select id="trends-fund"><option value="">All funds</option></select></label>
+        <label>From <input type="date" id="trends-from" /></label>
+        <label>To <input type="date" id="trends-to" /></label>
+        <button class="ghost" id="trends-full-range">Full range</button>
+        <button class="primary" id="trends-refresh">Refresh</button>
+      </div>
+      <p class="summary" id="trends-summary"></p>
+      <div id="trends-chart" style="min-height: 400px; display: none;"></div>
+      <p id="trends-no-data" class="summary">No data available</p>
+    </section>
+
+    <section id="panel-net-worth" class="tab-panel">
+      <div class="toolbar">
+        <label>Owner <select id="nw-owner"></select></label>
+        <button class="primary" id="nw-refresh">Refresh</button>
+      </div>
+      <p class="summary" id="nw-summary"></p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Breakdown</h3>
+          <div class="table-wrap">
+            <table id="nw-table">
+              <thead><tr><th>Item</th><th>Currency</th><th>Local</th><th>USD</th><th>Source</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Other assets</h3>
+          <div class="form-grid" style="margin-bottom: 12px;">
+            <label>Type <input id="asset-type" /></label>
+            <label>Amount <input id="asset-amount" type="number" step="any" /></label>
+            <label>Currency <select id="asset-currency"><option>USD</option><option>AUD</option><option>GBP</option></select></label>
+          </div>
+          <button class="primary" id="asset-add">Add asset</button>
+          <div class="table-wrap" style="margin-top: 12px;">
+            <table id="assets-table">
+              <thead><tr><th>Type</th><th>Amount</th><th>Curr</th><th>Action</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
