@@ -1,0 +1,16 @@
+# Coverage scope. The desktop GUI (trade_gui.py) is excluded because it needs a
+# display and cannot run in the test suite. Its 1,490 statements are reported
+# separately in README.md and docs/security-audit.md.
+[run]
+branch = False
+source = .
+omit =
+    trade_gui.py
+    tests/*
+    sample_data/*
+    .venv/*
+    */__pycache__/*
+
+[report]
+show_missing = True
+skip_covered = False
