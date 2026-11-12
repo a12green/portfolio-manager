@@ -2,7 +2,8 @@
 .env
 *.env
 shares-*.json
-*service-account*.json
+*# No longer used. Kept so a key saved by mistake is never committed or copied into the image.
+service-account*.json
 *serviceaccount*.json
 
 # Database (real trade/brokerage data)

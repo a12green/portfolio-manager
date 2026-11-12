@@ -35,7 +35,7 @@ trade_gui.py            Desktop GUI (Tk)
 init_database.py        First-time database setup
 config.py               Loads owner names from settings.json
 ledger/                 Database access, money parsing, prices, trade ledger
-importers/              Broker CSV and PDF importers, fund-list importer
+importers/              Broker CSV and PDF importers, fund-list CSV importer
 reports/                PDF reports, heat map, fund balance charts, alerts
 web/                    FastAPI web UI (app, auth, services, password tool)
 sample_data/            Fake broker exports and statements, and a demo loader
@@ -99,8 +99,7 @@ Copy `.env.example` and fill it in. The important groups are:
 
 | Group | Variables |
 | --- | --- |
-| Google Sheets (optional) | `GOOGLE_SERVICE_ACCOUNT_FILE`, `GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_SHEET_NAME`, `GOOGLE_FUND_LIST_SHEET_NAME` |
-| Fund list rows | `OWNER_A_FUND_ROWS` (for example `2:9`), `OWNER_B_FUND_ROW`, `OWNER_C_FUND_ROW` |
+| Holdings | `PORTFOLIO_CSV_PATH` (default `Stocks.csv` next to `main.py`) |
 | Storage | `STORAGE_DB_PATH` (default `data/portfolio_history.sqlite3`) |
 | Live prices | `LIVE_QUOTES`, `LIVE_QUOTES_POLL_SEC`, `LIVE_QUOTES_CACHE_SEC`, `MARKET_HOLIDAYS_ENABLED` |
 | Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM`, `EMAIL_TO`, `EMAIL_SUBJECT` |
@@ -108,18 +107,13 @@ Copy `.env.example` and fill it in. The important groups are:
 | Web UI | `WEB_HOST` (default `127.0.0.1`), `WEB_PORT`, `WEB_SECURE_COOKIES`, `WEB_TRUST_PROXY`, `WEB_SESSION_HOURS`, `WEB_PUBLIC_URL`, `WEB_RESET_TOKEN_MINUTES` |
 | Fidelity | `FIDELITY_OWNER_B_HOLDER`, `FIDELITY_OWNER_B_ACCOUNT`, `FIDELITY_LLC_ACCOUNT_IDS` |
 
-Google Sheets is optional. Without it, the app works from its own database and
-the broker imports.
+Holdings are read from a local CSV in the same layout as `Stocks.csv`. Set
+`PORTFOLIO_CSV_PATH`, or place `Stocks.csv` next to `main.py`. Everything else
+comes from the app's own database and the broker imports.
 
 For Fidelity, set the owner-B holder line and account number from your own
 statements. The defaults are placeholders. `FIDELITY_LLC_ACCOUNT_IDS` lists
 account numbers that appear in LLC export file names, comma-separated.
-
-### Google service account (optional)
-
-If you use the Google Sheets features, create a service account in Google
-Cloud, share the spreadsheet with its email address, and save its JSON key as
-the file named by `GOOGLE_SERVICE_ACCOUNT_FILE`. Never commit that file.
 
 ## Command-line usage
 
@@ -128,7 +122,6 @@ the file named by `GOOGLE_SERVICE_ACCOUNT_FILE`. Never commit that file.
 ```bash
 # Snapshots
 python main.py --snapshot-stocks-daily
-python main.py --snapshot-funds-weekly
 
 # Reports and email
 python main.py --pdf-report
@@ -171,25 +164,23 @@ exports in the same format.
 ## Deployment
 
 - **Docker.** `docker compose up --build` builds the image and serves the web
-  UI on port 8080. `docker-compose.yml` mounts `./data` and expects the
-  service-account file at `./service-account.json`. Adjust the path if yours
-  differs.
+  UI on port 8080. `docker-compose.yml` mounts `./data` into the container.
 - **PythonAnywhere.** `pythonanywhere_wsgi.py` wraps the FastAPI app for WSGI
   hosting. Set the environment variables in the Web tab rather than in `.env`.
 
 ## Running tests and checks
 
 The test suite runs offline. Each test gets its own temporary database. Yahoo
-Finance and Google Sheets are replaced by fakes, and any attempt to open a
-network socket fails the test.
+Finance is replaced by a fake, and any attempt to open a network socket fails
+the test.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                       # 296 tests
+python -m pytest                       # 288 tests
 python -m pytest --cov                 # with line coverage (settings in .coveragerc)
 ```
 
-Line coverage is **79.9%** (6,427 of 8,042 statements). `trade_gui.py` is
+Line coverage is **80.6%** (6,202 of 7,690 statements). `trade_gui.py` is
 excluded because it needs a display, and it has no automated tests. Counting it
 would bring the figure to about 67%. The remaining gaps are mostly the
 Hargreaves Lansdown and AusSuper importers' less common layouts, the market

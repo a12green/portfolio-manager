@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 settings.json
+# No longer used. Kept so a key saved by mistake is never committed or copied into the image.
 service-account*.json
 *service-account*.json
 *.sqlite3

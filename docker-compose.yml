@@ -7,5 +7,4 @@ services:
       - .env
     volumes:
       - ./data:/data
-      - ./service-account.json:/app/service-account.json:ro
     restart: unless-stopped

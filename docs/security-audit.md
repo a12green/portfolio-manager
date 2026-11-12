@@ -1,9 +1,10 @@
 # Security audit
 
 **Status as of this update (2026-11-12).** Two items are still open: the
-Docker image has not been built or inspected, and the Yahoo and Google
-Sheets paths have not been exercised against live services. Everything else
-below is fixed, closed, or accepted with a stated condition.
+Docker image has not been built or inspected, and the Yahoo Finance paths have
+not been exercised against the live service. Everything else below is fixed,
+closed, or accepted with a stated condition. The Google Sheets integration has
+been removed, so the app no longer handles a service-account key.
 
 **Scope:** the whole repository: the FastAPI web UI and its authentication, the
 browser front end (`web/static/app.js`), the importers, the reports and email
@@ -21,8 +22,8 @@ code, the desktop GUI's dependency handling, the Dockerfile and
 - A test suite of 296 tests, run offline. Each fix below has a regression test.
 
 **Not done:** a live penetration test, a browser-based XSS test, a
-`docker build`, and running the Yahoo and Google Sheets integrations against
-the live services. The test suite replaces both with fakes.
+`docker build`, and running the Yahoo Finance integration against the live
+service. The test suite replaces it with a fake.
 
 ## Findings fixed
 
@@ -54,7 +55,7 @@ Two stopped the app from starting. The rest broke a feature when it was used.
   `web/__main__.py` imported a module by its old flat name, a regression from
   the package reorganisation. Fixed in `65ee7d4`. A scan of the whole code for
   flat imports is clean.
-- **The holdings-to-sheet comparison crashed on any discrepancy.** The summary
+- **The holdings-to-sheet comparison crashed on any discrepancy** (this feature was removed with the Google Sheets integration). The summary
   used the format `{delta:+.g}`, which Python rejects because `.g` needs a
   precision. The GUI had the same string. Both are fixed.
 - **The web API could not update a fund's balance.** The service passed
@@ -76,6 +77,7 @@ Two stopped the app from starting. The rest broke a feature when it was used.
 
 | Severity | Item | How it was closed | Commit |
 | --- | --- | --- | --- |
+| Medium | The app held a Google service-account key and read a spreadsheet with it. | The Google Sheets integration was removed: the code, the `gspread` and `google-auth` dependencies, the Docker key mount, and the `.env` settings. Holdings now come from a local CSV. The ignore rules for service-account keys stay as a safety net. | `this update` |
 | Medium | Session cookie was not `Secure` by default. | `WEB_SECURE_COOKIES` defaults to `true`. The test suite runs over plain HTTP and sets it to `false` for itself. A subprocess test confirms the code default is `true`. Plain-HTTP local use needs `WEB_SECURE_COOKIES=false` in `.env`. | `07630f0` |
 | Low | No CSRF protection beyond `SameSite=Lax`. | A middleware refuses state-changing `/api/` calls unless they send `Content-Type: application/json`. A cross-site HTML form cannot send that type. It also refuses any request whose `Origin` header is not this server or `WEB_PUBLIC_URL`. Tests cover both refusals and a same-origin success. The front end always sends the JSON header. | `07630f0` |
 | Low | Minimum password length was 8. | Raised to 12 in the password command, both API models, and the front end. Tests cover the boundary. | `07630f0`, `484e067` |
@@ -94,7 +96,7 @@ Two stopped the app from starting. The rest broke a feature when it was used.
 | Item | What is needed |
 | --- | --- |
 | The Docker image has not been built or inspected. | Start Docker Desktop, then run `docker build -t portfolio-manager .`. Check the image with `docker run --rm --entrypoint sh portfolio-manager -c "ls -la /app"`. The listing should contain no `.env`, `settings.json`, databases or statements, and the process should run as user `app`. |
-| The Yahoo and Google Sheets integrations have not been run against live services. | Run the quote and sheet commands once with real credentials. The tests cover the code paths with fakes, which shows the logic works on the shapes they return. It does not prove the live services still return those shapes. |
+| The Yahoo Finance integration has not been run against the live service. | Run the quote commands once. The tests cover the code paths with a fake, which shows the logic works on the shape it returns. It does not prove the live service still returns that shape. |
 
 ## Verification (this update)
 
@@ -104,8 +106,8 @@ Two stopped the app from starting. The rest broke a feature when it was used.
   test, and with `ResourceWarning` treated as an error the suite passes with no
   unclosed-connection warnings.
 
-- `pytest`: 296 passed.
-- Line coverage: 79.9% (6,427 of 8,042 statements). `trade_gui.py` is excluded
+- `pytest`: 288 passed, with `ResourceWarning` treated as an error.
+- Line coverage: 80.6% (6,202 of 7,690 statements). `trade_gui.py` is excluded
   because it needs a display. Counting it, coverage is about 67%.
 - The remaining gaps are mostly less common importer layouts and the market
   movers and fund-cash reconciliation code. The portfolio card widgets are
