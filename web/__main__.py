@@ -35,7 +35,7 @@ def _warn_if_admin_locked() -> None:
 
 if __name__ == "__main__":
     _warn_if_admin_locked()
-    host = os.getenv("WEB_HOST", "0.0.0.0")
+    host = os.getenv("WEB_HOST", "127.0.0.1")
     port = int(os.getenv("WEB_PORT", "8080"))
     uvicorn.run(
         "web.app:app",

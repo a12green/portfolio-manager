@@ -1,0 +1,22 @@
+# Never bake secrets, personal settings or data into the image.
+.env
+.env.*
+!.env.example
+settings.json
+service-account*.json
+*service-account*.json
+*.sqlite3
+data/
+reports/
+Logs/
+sample_data/statements/
+**/*.pdf
+**/*.csv
+.git/
+.gitignore
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+.DS_Store
+tests/
