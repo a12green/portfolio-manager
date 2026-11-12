@@ -1,4 +1,7 @@
 const $ = (sel) => document.querySelector(sel);
+// Escape anything from the server or the user before it goes into innerHTML.
+const esc = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const statusEl = $("#status");
 
 let currentUser = null;
@@ -206,31 +209,31 @@ const PORT_COLUMNS = [
   {
     label: "Name",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td class="ticker">${h.name}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td class="ticker">${esc(h.name)}</td>`);
     },
   },
   {
     label: "Qty",
     append(tr, _h, ctx) {
-      tr.insertAdjacentHTML("beforeend", `<td>${ctx.qty}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(ctx.qty)}</td>`);
     },
   },
   {
     label: "% Port",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td>${h.pct_port.toFixed(1)}%</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(h.pct_port.toFixed(1))}%</td>`);
     },
   },
   {
     label: "Open",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td>${fmtMoney(h.day_open, h.loc)}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(fmtMoney(h.day_open, h.loc))}</td>`);
     },
   },
   {
     label: "Mark",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td>${fmtMoney(h.last, h.loc)}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(fmtMoney(h.last, h.loc))}</td>`);
     },
   },
   {
@@ -238,7 +241,7 @@ const PORT_COLUMNS = [
     append(tr, h) {
       tr.insertAdjacentHTML(
         "beforeend",
-        `<td class="${plClass(h.price_diff)}">${fmtMoney(h.price_diff, h.loc)}</td>`
+        `<td class="${esc(plClass(h.price_diff))}">${esc(fmtMoney(h.price_diff, h.loc))}</td>`
       );
     },
   },
@@ -247,7 +250,7 @@ const PORT_COLUMNS = [
     append(tr, h) {
       tr.insertAdjacentHTML(
         "beforeend",
-        `<td class="${plClass(h.day_change)}">${fmtMoney(h.day_change, h.loc)}</td>`
+        `<td class="${esc(plClass(h.day_change))}">${esc(fmtMoney(h.day_change, h.loc))}</td>`
       );
     },
   },
@@ -256,32 +259,32 @@ const PORT_COLUMNS = [
     append(tr, h) {
       tr.insertAdjacentHTML(
         "beforeend",
-        `<td class="${plClass(h.day_change_pct)}">${fmtPct(h.day_change_pct)}</td>`
+        `<td class="${esc(plClass(h.day_change_pct))}">${esc(fmtPct(h.day_change_pct))}</td>`
       );
     },
   },
   {
     label: "Day Hi",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td>${fmtMoney(h.day_high, h.loc)}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(fmtMoney(h.day_high, h.loc))}</td>`);
     },
   },
   {
     label: "Day Lo",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td>${fmtMoney(h.day_low, h.loc)}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(fmtMoney(h.day_low, h.loc))}</td>`);
     },
   },
   {
     label: "52W Hi",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td>${fmtMoney(h.w52_high, h.loc)}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(fmtMoney(h.w52_high, h.loc))}</td>`);
     },
   },
   {
     label: "52W Lo",
     append(tr, h) {
-      tr.insertAdjacentHTML("beforeend", `<td>${fmtMoney(h.w52_low, h.loc)}</td>`);
+      tr.insertAdjacentHTML("beforeend", `<td>${esc(fmtMoney(h.w52_low, h.loc))}</td>`);
     },
   },
   {
@@ -289,7 +292,7 @@ const PORT_COLUMNS = [
     append(tr, h) {
       tr.insertAdjacentHTML(
         "beforeend",
-        `<td class="${plClass(h.pl_d)}">${fmtMoney(h.pl_d, h.loc)}</td>`
+        `<td class="${esc(plClass(h.pl_d))}">${esc(fmtMoney(h.pl_d, h.loc))}</td>`
       );
     },
   },
@@ -298,7 +301,7 @@ const PORT_COLUMNS = [
     append(tr, h) {
       tr.insertAdjacentHTML(
         "beforeend",
-        `<td class="${plClass(h.pl_p)}">${fmtPct(h.pl_p)}</td>`
+        `<td class="${esc(plClass(h.pl_p))}">${esc(fmtPct(h.pl_p))}</td>`
       );
     },
   },
@@ -307,11 +310,11 @@ const PORT_COLUMNS = [
 function initPortTableHead() {
   const tr = document.querySelector("#port-table thead tr");
   if (!tr) return;
-  tr.innerHTML = PORT_COLUMNS.map((c) => `<th>${c.label}</th>`).join("");
+  tr.innerHTML = PORT_COLUMNS.map((c) => `<th>${esc(c.label)}</th>`).join("");
 }
 
 function fillSelect(el, values, selected) {
-  el.innerHTML = values.map((v) => `<option value="${v}">${v}</option>`).join("");
+  el.innerHTML = values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
   if (selected && values.includes(selected)) el.value = selected;
 }
 
@@ -422,7 +425,7 @@ async function loadTrades() {
   tbody.innerHTML = data.trades
     .map(
       (t) =>
-        `<tr><td>${t.id}</td><td>${t.trade_date}</td><td>${t.instrument_type}</td><td>${t.side}</td><td>${t.display_name || t.ticker}</td><td>${t.shares}</td><td>${t.price.toFixed(2)}</td><td>${t.fees.toFixed(2)}</td></tr>`
+        `<tr><td>${esc(t.id)}</td><td>${esc(t.trade_date)}</td><td>${esc(t.instrument_type)}</td><td>${esc(t.side)}</td><td>${esc(t.display_name || t.ticker)}</td><td>${esc(t.shares)}</td><td>${esc(t.price.toFixed(2))}</td><td>${esc(t.fees.toFixed(2))}</td></tr>`
     )
     .join("");
 }
@@ -438,14 +441,14 @@ async function loadLedger() {
   $("#ledger-table tbody").innerHTML = data.positions
     .map(
       (p) =>
-        `<tr><td class="ticker">${p.display_name || p.ticker}</td><td>${p.shares}</td><td>${fmtMoney(p.avg_cost)}</td><td>${fmtMoney(p.mark_price)}</td><td>${fmtMoney(p.market_value)}</td><td class="${plClass(p.unrealized_pl)}">${fmtMoney(p.unrealized_pl)}</td><td>${p.realized_pl != null ? fmtMoney(p.realized_pl) : "—"}</td></tr>`
+        `<tr><td class="ticker">${esc(p.display_name || p.ticker)}</td><td>${esc(p.shares)}</td><td>${esc(fmtMoney(p.avg_cost))}</td><td>${esc(fmtMoney(p.mark_price))}</td><td>${esc(fmtMoney(p.market_value))}</td><td class="${esc(plClass(p.unrealized_pl))}">${esc(fmtMoney(p.unrealized_pl))}</td><td>${esc(p.realized_pl != null ? fmtMoney(p.realized_pl) : "—")}</td></tr>`
     )
     .join("");
   $("#disc-table tbody").innerHTML = data.discrepancies.length
     ? data.discrepancies
         .map(
           (d) =>
-            `<tr class="disc"><td>${d.ticker}</td><td>${d.ledger_shares}</td><td>${d.sheet_shares}</td><td>${d.delta}</td><td>${d.scope}</td></tr>`
+            `<tr class="disc"><td>${esc(d.ticker)}</td><td>${esc(d.ledger_shares)}</td><td>${esc(d.sheet_shares)}</td><td>${esc(d.delta)}</td><td>${esc(d.scope)}</td></tr>`
         )
         .join("")
     : `<tr><td colspan="5">No discrepancies</td></tr>`;
@@ -482,7 +485,7 @@ async function loadHeatmap() {
     const flex = Math.max(1, Math.round((t.value / maxVal) * 8));
     el.style.flex = `${flex} 1 120px`;
     el.style.background = heatColor(t.pl_pct);
-    el.innerHTML = `<strong>${t.ticker}</strong><br>${t.fund_name}<br>${fmtPct(t.pl_pct)}`;
+    el.innerHTML = `<strong>${esc(t.ticker)}</strong><br>${esc(t.fund_name)}<br>${esc(fmtPct(t.pl_pct))}`;
     root.appendChild(el);
   });
   setStatus("Heat map updated");
@@ -493,7 +496,7 @@ async function loadMovers() {
   const market = $("#movers-market").value;
   const data = await api(`/api/market-movers?market=${encodeURIComponent(market)}`);
   const row = (m) =>
-    `<tr><td>${m.rank}</td><td class="ticker">${m.symbol}</td><td>${m.name}</td><td>${fmtMoney(m.price)}</td><td class="${plClass(m.change_pct)}">${fmtPct(m.change_pct)}</td></tr>`;
+    `<tr><td>${esc(m.rank)}</td><td class="ticker">${esc(m.symbol)}</td><td>${esc(m.name)}</td><td>${esc(fmtMoney(m.price))}</td><td class="${esc(plClass(m.change_pct))}">${esc(fmtPct(m.change_pct))}</td></tr>`;
   if (data.error) {
     const msg = `<tr><td colspan="5">Market movers unavailable (blocked network access to the quote provider)</td></tr>`;
     $("#gainers-table tbody").innerHTML = msg;
@@ -512,7 +515,7 @@ async function loadFundBalances() {
   const data = await api(`/api/fund-balances?owner=${encodeURIComponent(owner)}`);
   
   const rows = data.balances.map((b) =>
-    `<tr><td>${b.fund_name}</td><td>${b.currency}</td><td>${fmtMoney(b.amount, b.currency)}</td><td>${fmtMoney(b.amount_usd)}</td><td>${b.as_of}</td><td>${b.source}</td></tr>`
+    `<tr><td>${esc(b.fund_name)}</td><td>${esc(b.currency)}</td><td>${esc(fmtMoney(b.amount, b.currency))}</td><td>${esc(fmtMoney(b.amount_usd))}</td><td>${esc(b.as_of)}</td><td>${esc(b.source)}</td></tr>`
   ).join("");
   $("#bal-table tbody").innerHTML = rows;
   
@@ -521,7 +524,7 @@ async function loadFundBalances() {
   
   // Sync manual balance fund select
   const fundSelect = $("#manual-fund");
-  fundSelect.innerHTML = data.balances.map((b) => `<option value="${b.fund_name}">${b.fund_name}</option>`).join("");
+  fundSelect.innerHTML = data.balances.map((b) => `<option value="${esc(b.fund_name)}">${esc(b.fund_name)}</option>`).join("");
   setStatus("Fund balances updated");
 }
 
@@ -815,7 +818,7 @@ function drawFundTrendsChart(series) {
     .map((s, idx) => {
       const color = TRENDS_LINE_COLORS[idx % TRENDS_LINE_COLORS.length];
       const latest = s.nav_usd[s.nav_usd.length - 1];
-      return `<span class="trends-legend-item"><span class="trends-swatch" style="background:${color}"></span>${s.fund_name} (${s.owner}) — ${fmtDollar(latest)}</span>`;
+      return `<span class="trends-legend-item"><span class="trends-swatch" style="background:${esc(color)}"></span>${esc(s.fund_name)} (${esc(s.owner)}) — ${esc(fmtDollar(latest))}</span>`;
     })
     .join("");
   container.appendChild(legend);
@@ -827,7 +830,7 @@ async function loadNetWorth() {
   const data = await api(`/api/net-worth?owner=${encodeURIComponent(owner)}`);
   
   const rows = data.lines.map((line) =>
-    `<tr><td>${line.label}</td><td>${line.currency}</td><td>${fmtMoney(line.amount_local, line.currency)}</td><td>${fmtMoney(line.amount_usd)}</td><td>${line.source}</td></tr>`
+    `<tr><td>${esc(line.label)}</td><td>${esc(line.currency)}</td><td>${esc(fmtMoney(line.amount_local, line.currency))}</td><td>${esc(fmtMoney(line.amount_usd))}</td><td>${esc(line.source)}</td></tr>`
   ).join("");
   $("#nw-table tbody").innerHTML = rows;
   
@@ -843,7 +846,7 @@ async function loadOtherAssets() {
   const data = await api(`/api/other-assets?owner=${encodeURIComponent(owner)}`);
   
   const rows = data.assets.map((a) =>
-    `<tr><td>${a.asset_type}</td><td>${fmtMoney(a.amount, a.currency)}</td><td>${a.currency}</td><td><button class="ghost" onclick="deleteOtherAsset('${a.asset_type}')">Delete</button></td></tr>`
+    `<tr><td>${esc(a.asset_type)}</td><td>${esc(fmtMoney(a.amount, a.currency))}</td><td>${esc(a.currency)}</td><td><button class="ghost" onclick="deleteOtherAsset(${esc(JSON.stringify(a.asset_type))})">Delete</button></td></tr>`
   ).join("");
   $("#assets-table tbody").innerHTML = rows;
 }
