@@ -131,8 +131,9 @@ def _fake_screen(query, *, count=20, sortField=None, sortAsc=False, **kwargs):
     return {"quotes": _SCREEN_LOSERS if sortAsc else _SCREEN_GAINERS}
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def fake_yahoo(monkeypatch):
+    """Every test gets the Yahoo fake, so the real yfinance library (and its SQLite cache) is never used."""
     import yfinance as yf
 
     monkeypatch.setattr(yf, "Ticker", _FakeTicker)

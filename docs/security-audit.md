@@ -95,9 +95,14 @@ Two stopped the app from starting. The rest broke a feature when it was used.
 | --- | --- |
 | The Docker image has not been built or inspected. | Start Docker Desktop, then run `docker build -t portfolio-manager .`. Check the image with `docker run --rm --entrypoint sh portfolio-manager -c "ls -la /app"`. The listing should contain no `.env`, `settings.json`, databases or statements, and the process should run as user `app`. |
 | The Yahoo and Google Sheets integrations have not been run against live services. | Run the quote and sheet commands once with real credentials. The tests cover the code paths with fakes, which shows the logic works on the shapes they return. It does not prove the live services still return those shapes. |
-| Unclosed SQLite connections are reported when the whole suite runs. | Each test file run alone is clean. The warning appears only in a full run, which points to a connection left open in one test and collected during another. Trace it with `python -X tracemalloc=20 -m pytest -W error::ResourceWarning`, run in the background because it is slow. The application's own call sites all close their connections. |
 
 ## Verification (this update)
+
+- Unclosed connections: the cause was not this project's code. The real
+  `yfinance` library opened SQLite connections for its timezone cache when a
+  few tests reached it. The test suite now replaces Yahoo Finance for every
+  test, and with `ResourceWarning` treated as an error the suite passes with no
+  unclosed-connection warnings.
 
 - `pytest`: 296 passed.
 - Line coverage: 79.9% (6,427 of 8,042 statements). `trade_gui.py` is excluded
