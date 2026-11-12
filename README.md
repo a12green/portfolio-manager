@@ -1,5 +1,7 @@
 # Portfolio Manager
 
+Tool to manage stock portfolios on a Mac desktop or the web.
+
 A personal investment tracker for a household with several owners and
 accounts. It imports broker exports, keeps a SQLite history of holdings and
 cash, works out what each fund owns, and produces PDF reports, email
