@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from ledger.db import connect_db
 from web import auth, reset_mail, services
 from web.auth import (
+    SECURE_COOKIES,
     SESSION_COOKIE,
     WebUser,
     authenticate_user,
@@ -132,6 +133,30 @@ class OtherAssetCreate(BaseModel):
     asset_type: str = Field(min_length=1, max_length=80)
     amount: float = Field(gt=0)
     currency: str = "USD"
+
+
+_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; "
+    "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    headers = response.headers
+    headers["Content-Security-Policy"] = _CSP
+    headers["X-Content-Type-Options"] = "nosniff"
+    headers["X-Frame-Options"] = "DENY"
+    headers["Referrer-Policy"] = "same-origin"
+    headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if request.url.path.startswith("/api/"):
+        # Financial data must not be kept by browsers or shared caches.
+        headers["Cache-Control"] = "no-store"
+    if SECURE_COOKIES:
+        headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 @app.post("/api/auth/login")
