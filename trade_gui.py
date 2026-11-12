@@ -23,7 +23,6 @@ from ttkbootstrap.style.theme import Theme
 import trades_cli
 
 from gui_logic.formatting import (
-    currency_loc as _currency_loc,
     fmt_money as _fmt_money,
     fmt_pct as _fmt_pct,
     pl_row_tag as _pl_row_tag,
@@ -32,6 +31,8 @@ from gui_logic.formatting import (
 )
 from gui_logic.tables import (
     balance_row_cells,
+    fund_summary_text,
+    ledger_position_cells,
     trade_row_cells,
     balances_summary,
     fund_holding_rows,
@@ -1913,111 +1914,26 @@ class TradeEntryApp(tk.Tk):
             self.refresh_portfolio_view(use_live=True)
 
     def refresh_ledger_detail_view(self, *, use_live: bool = False) -> None:
+        from app.use_cases import ledger_detail
+        from ledger.quotes import live_quotes_enabled
+
         owner = self.port_owner_var.get().strip()
         fund_filter = self._port_fund_filter()
         label = _port_owner_label(owner)
 
         self._clear_tree(self.book_tree)
-
         summary_parts: list[str] = []
-
         try:
-            from ledger.db import connect_db
-            from reports.holdings_compare import collect_ledger_card_positions
-            from ledger.trade_ledger import build_fund_ledger_with_db
-            from ledger.quotes import live_quotes_enabled, marks_for_fund
-            from ledger.trades_db import get_fund_by_name, init_trade_schema, list_funds
-
-            conn = connect_db(trades_cli._db_path())
-            try:
-                init_trade_schema(conn)
-                live_fund = " · live marks" if use_live and live_quotes_enabled(force=True) else ""
-
-                if fund_filter:
-                    fund = get_fund_by_name(conn, fund_filter)
-                    if fund:
-                        marks = marks_for_fund(
-                            conn,
-                            fund,
-                            date.today(),
-                            live=use_live,
-                            force_live=use_live,
-                        )
-                        result = build_fund_ledger_with_db(
-                            conn, fund, marks, date.today(), strict=False
-                        )
-                        cur = fund.currency
-                        for p in sorted(result.positions, key=lambda x: -(x.pct_of_nav or 0)):
-                            self.book_tree.insert(
-                                "",
-                                tk.END,
-                                tags=(_pl_row_tag(p.unrealized_pl),),
-                                values=(
-                                    p.ticker,
-                                    f"{p.shares:g}",
-                                    _fmt_money(p.avg_cost, cur),
-                                    _fmt_money(p.mark_price, cur) if p.mark_price is not None else "—",
-                                    _fmt_money(p.market_value, cur) if p.market_value is not None else "—",
-                                    _fmt_money(p.unrealized_pl, cur) if p.unrealized_pl is not None else "—",
-                                    _fmt_money(p.cumulative_realized_pl, cur),
-                                ),
-                            )
-                        summary_parts.append(
-                            f"Fund “{fund_filter}”: cash {_fmt_money(result.cash_balance, cur)} · "
-                            f"NAV {_fmt_money(result.nav, cur)} · "
-                            f"ROI {_fmt_pct(result.fund_roi_pct) if result.fund_roi_pct is not None else '—'}"
-                            f"{live_fund}"
-                        )
-                else:
-                    positions = collect_ledger_card_positions(
-                        conn,
-                        owner=owner,
-                        fund_name=None,
-                        live=use_live,
-                        force_live=use_live,
-                    )
-                    for pos in positions:
-                        cur = _currency_loc(pos.currency)
-                        self.book_tree.insert(
-                            "",
-                            tk.END,
-                            tags=(_pl_row_tag(pos.unrealized_pl),),
-                            values=(
-                                pos.ticker,
-                                f"{pos.shares:g}",
-                                _fmt_money(pos.avg_cost, cur),
-                                _fmt_money(pos.mark_price, cur) if pos.mark_price is not None else "—",
-                                _fmt_money(pos.market_value, cur) if pos.market_value is not None else "—",
-                                _fmt_money(pos.unrealized_pl, cur) if pos.unrealized_pl is not None else "—",
-                                "—",
-                            ),
-                        )
-                    if owner.strip().lower() == "all":
-                        owner_funds = list_funds(conn)
-                    else:
-                        owner_funds = [f for f in list_funds(conn) if f.owner == owner]
-                    for fund in owner_funds:
-                        marks = marks_for_fund(
-                            conn,
-                            fund,
-                            date.today(),
-                            live=use_live,
-                            force_live=use_live,
-                        )
-                        result = build_fund_ledger_with_db(
-                            conn, fund, marks, date.today(), strict=False
-                        )
-                        cur = fund.currency
-                        summary_parts.append(
-                            f"Fund “{fund.name}”: cash {_fmt_money(result.cash_balance, cur)} · "
-                            f"NAV {_fmt_money(result.nav, cur)} · "
-                            f"ROI {_fmt_pct(result.fund_roi_pct) if result.fund_roi_pct is not None else '—'}"
-                            f"{live_fund}"
-                        )
-                    if not owner_funds:
-                        summary_parts.append(f"No funds for {label}.")
-            finally:
-                conn.close()
+            detail = ledger_detail(trades_cli._db_path(), owner=owner, fund=fund_filter, live=use_live)
+            live_note = " · live marks" if use_live and live_quotes_enabled(force=True) else ""
+            for pos in detail.positions:
+                self.book_tree.insert(
+                    "", tk.END, tags=(_pl_row_tag(pos.unrealized_pl),), values=ledger_position_cells(pos)
+                )
+            for fund in detail.funds:
+                summary_parts.append(fund_summary_text(fund, live_note))
+            if fund_filter is None and not detail.funds:
+                summary_parts.append(f"No funds for {label}.")
         except Exception as e:
             summary_parts.append(f"Trade ledger: unavailable ({e})")
 

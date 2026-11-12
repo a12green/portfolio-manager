@@ -249,93 +249,30 @@ def ledger_payload(
     fund: str | None,
     live: bool,
 ) -> dict[str, Any]:
-    fund_filter = None if not fund or fund.lower() == "all" else fund
-    conn = connect_db(trades_cli._db_path())
-    summaries: list[str] = []
-    positions_out: list[dict[str, Any]] = []
-    try:
-        init_trade_schema(conn)
-        if fund_filter:
-            fund_row = get_fund_by_name(conn, fund_filter)
-            if fund_row:
-                marks = marks_for_fund(
-                    conn, fund_row, date.today(), live=live, force_live=live
-                )
-                result = build_fund_ledger_with_db(
-                    conn, fund_row, marks, date.today(), strict=False
-                )
-                for p in sorted(result.positions, key=lambda x: -(x.pct_of_nav or 0)):
-                    if p.shares <= 0:
-                        continue
-                    from ledger.option_symbols import display_option_label
+    from app.use_cases import ledger_detail
 
-                    label = p.ticker
-                    if p.instrument_type == "option":
-                        label = display_option_label(
-                            underlying=p.underlying,
-                            expiry=p.expiry,
-                            strike=p.strike,
-                            put_call=p.put_call,
-                            occ_symbol=p.ticker,
-                        )
-                    positions_out.append(
-                        {
-                            "ticker": p.ticker,
-                            "display_name": label,
-                            "instrument_type": p.instrument_type,
-                            "shares": p.shares,
-                            "avg_cost": p.avg_cost,
-                            "mark_price": p.mark_price,
-                            "market_value": p.market_value,
-                            "unrealized_pl": p.unrealized_pl,
-                            "realized_pl": p.cumulative_realized_pl,
-                            "currency": fund_row.currency,
-                        }
-                    )
-                summaries.append(
-                    f"Fund “{fund_filter}”: cash {result.cash_balance:,.2f} · "
-                    f"NAV {result.nav:,.2f} · ROI {result.fund_roi_pct or 0:.2f}%"
-                )
-        else:
-            for pos in collect_ledger_card_positions(
-                conn, owner=owner, fund_name=None, live=live, force_live=live
-            ):
-                positions_out.append(
-                    {
-                        "ticker": pos.ticker,
-                        "display_name": pos.display_name or pos.ticker,
-                        "instrument_type": pos.instrument_type,
-                        "shares": pos.shares,
-                        "avg_cost": pos.avg_cost,
-                        "mark_price": pos.mark_price,
-                        "market_value": pos.market_value,
-                        "unrealized_pl": pos.unrealized_pl,
-                        "realized_pl": None,
-                        "currency": pos.currency,
-                    }
-                )
-            funds = (
-                list_funds(conn)
-                if owner.strip().lower() == "all"
-                else [f for f in list_funds(conn) if f.owner == owner]
-            )
-            for f in funds:
-                marks = marks_for_fund(
-                    conn, f, date.today(), live=live, force_live=live
-                )
-                result = build_fund_ledger_with_db(
-                    conn, f, marks, date.today(), strict=False
-                )
-                summaries.append(
-                    f"Fund “{f.name}”: cash {result.cash_balance:,.2f} · "
-                    f"NAV {result.nav:,.2f} · ROI {result.fund_roi_pct or 0:.2f}%"
-                )
-    finally:
-        conn.close()
-
+    detail = ledger_detail(trades_cli._db_path(), owner=owner, fund=fund, live=live)
+    summaries = [
+        f"Fund “{f.name}”: cash {f.cash:,.2f} · NAV {f.nav:,.2f} · ROI {f.roi_pct or 0:.2f}%"
+        for f in detail.funds
+    ]
     return {
         "summaries": summaries,
-        "positions": positions_out,
+        "positions": [
+            {
+                "ticker": p.ticker,
+                "display_name": p.display_name,
+                "instrument_type": p.instrument_type,
+                "shares": p.shares,
+                "avg_cost": p.avg_cost,
+                "mark_price": p.mark_price,
+                "market_value": p.market_value,
+                "unrealized_pl": p.unrealized_pl,
+                "realized_pl": p.realized_pl,
+                "currency": p.currency,
+            }
+            for p in detail.positions
+        ],
     }
 
 

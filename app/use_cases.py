@@ -1,0 +1,113 @@
+"""Business operations shared by the web UI and the desktop GUI."""
+
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+from app.models import FundSummary, LedgerDetail, LedgerPosition
+from ledger.db import connect_db
+from ledger.option_symbols import display_option_label
+from ledger.trade_ledger import build_fund_ledger_with_db
+from ledger.trades_db import get_fund_by_name, init_trade_schema, list_funds
+from ledger.quotes import marks_for_fund
+from reports.holdings_compare import collect_ledger_card_positions
+
+
+def _is_all(value: str | None) -> bool:
+    return not value or value.strip().lower() == "all"
+
+
+def ledger_detail(
+    db_path: Path,
+    *,
+    owner: str,
+    fund: str | None,
+    live: bool,
+    as_of: date | None = None,
+) -> LedgerDetail:
+    """Positions and one-line summaries for an owner, or for a single fund when one is named.
+
+    Zero-share positions are left out of the fund view. The owner view lists every position.
+    """
+    as_of = as_of or date.today()
+    fund_filter = None if _is_all(fund) else fund.strip()
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        if fund_filter:
+            return _fund_ledger(conn, fund_filter, live=live, as_of=as_of)
+        return _owner_ledger(conn, owner, live=live, as_of=as_of)
+    finally:
+        conn.close()
+
+
+def _fund_ledger(conn, fund_name: str, *, live: bool, as_of: date) -> LedgerDetail:
+    fund_row = get_fund_by_name(conn, fund_name)
+    if fund_row is None:
+        return LedgerDetail(fund_filter=fund_name)
+    marks = marks_for_fund(conn, fund_row, as_of, live=live, force_live=live)
+    result = build_fund_ledger_with_db(conn, fund_row, marks, as_of, strict=False)
+    positions = []
+    for p in sorted(result.positions, key=lambda x: -(x.pct_of_nav or 0)):
+        if p.shares <= 0:
+            continue
+        label = p.ticker
+        if p.instrument_type == "option":
+            label = display_option_label(
+                underlying=p.underlying,
+                expiry=p.expiry,
+                strike=p.strike,
+                put_call=p.put_call,
+                occ_symbol=p.ticker,
+            )
+        positions.append(
+            LedgerPosition(
+                ticker=p.ticker,
+                display_name=label,
+                instrument_type=p.instrument_type,
+                shares=p.shares,
+                avg_cost=p.avg_cost,
+                mark_price=p.mark_price,
+                market_value=p.market_value,
+                unrealized_pl=p.unrealized_pl,
+                realized_pl=p.cumulative_realized_pl,
+                currency=fund_row.currency,
+            )
+        )
+    summary = FundSummary(
+        name=fund_row.name,
+        currency=fund_row.currency,
+        cash=result.cash_balance,
+        nav=result.nav,
+        roi_pct=result.fund_roi_pct,
+    )
+    return LedgerDetail(positions=positions, funds=[summary], fund_filter=fund_name)
+
+
+def _owner_ledger(conn, owner: str, *, live: bool, as_of: date) -> LedgerDetail:
+    positions = [
+        LedgerPosition(
+            ticker=pos.ticker,
+            display_name=pos.display_name or pos.ticker,
+            instrument_type=pos.instrument_type,
+            shares=pos.shares,
+            avg_cost=pos.avg_cost,
+            mark_price=pos.mark_price,
+            market_value=pos.market_value,
+            unrealized_pl=pos.unrealized_pl,
+            realized_pl=None,
+            currency=pos.currency,
+        )
+        for pos in collect_ledger_card_positions(conn, owner=owner, fund_name=None, live=live, force_live=live)
+    ]
+    funds = list_funds(conn) if _is_all(owner) else [f for f in list_funds(conn) if f.owner == owner]
+    summaries = []
+    for f in funds:
+        marks = marks_for_fund(conn, f, as_of, live=live, force_live=live)
+        result = build_fund_ledger_with_db(conn, f, marks, as_of, strict=False)
+        summaries.append(
+            FundSummary(name=f.name, currency=f.currency, cash=result.cash_balance,
+                        nav=result.nav, roi_pct=result.fund_roi_pct)
+        )
+    return LedgerDetail(positions=positions, funds=summaries)

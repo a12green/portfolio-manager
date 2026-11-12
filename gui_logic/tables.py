@@ -156,3 +156,31 @@ def trade_row_cells(t: Any) -> tuple[str, ...]:
         f"{t.price:.2f}",
         f"{t.fees:.2f}",
     )
+
+
+def ledger_position_cells(pos: Any) -> tuple[str, ...]:
+    """One row of the Ledger table, in the position's own currency."""
+    from gui_logic.formatting import currency_loc
+
+    cur = currency_loc(pos.currency)
+    return (
+        pos.ticker,
+        f"{pos.shares:g}",
+        fmt_money(pos.avg_cost, cur),
+        fmt_money(pos.mark_price, cur) if pos.mark_price is not None else "—",
+        fmt_money(pos.market_value, cur) if pos.market_value is not None else "—",
+        fmt_money(pos.unrealized_pl, cur) if pos.unrealized_pl is not None else "—",
+        fmt_money(pos.realized_pl, cur) if pos.realized_pl is not None else "—",
+    )
+
+
+def fund_summary_text(fund: Any, live_note: str = "") -> str:
+    """One fund's cash, NAV and ROI, formatted in the fund's currency."""
+    from gui_logic.formatting import currency_loc, fmt_pct
+
+    cur = currency_loc(fund.currency)
+    roi = fmt_pct(fund.roi_pct) if fund.roi_pct is not None else "—"
+    return (
+        f"Fund “{fund.name}”: cash {fmt_money(fund.cash, cur)} · "
+        f"NAV {fmt_money(fund.nav, cur)} · ROI {roi}{live_note}"
+    )
