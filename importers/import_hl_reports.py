@@ -116,13 +116,13 @@ def _parse_snapshot_date(text: str) -> date | None:
 
 def _parse_total_nav(text: str) -> float | None:
     match = re.search(
-        r"(?:[\d,]+|\([\d,]+\))\s+([\d,]+|\([\d,]+\))\s+TOTAL\s+SIPP",
+        r"(?:[\d,]+(?:\.\d+)?|\([\d,]+(?:\.\d+)?\))\s+([\d,]+(?:\.\d+)?|\([\d,]+(?:\.\d+)?\))\s+TOTAL\s+SIPP",
         text,
         flags=re.IGNORECASE,
     )
     if match:
         return _money(match.group(1))
-    match = re.search(r"([\d,]+|\([\d,]+\))\s+TOTAL\s+SIPP", text, flags=re.IGNORECASE)
+    match = re.search(r"([\d,]+(?:\.\d+)?|\([\d,]+(?:\.\d+)?\))\s+TOTAL\s+SIPP", text, flags=re.IGNORECASE)
     if match:
         return _money(match.group(1))
     return None
