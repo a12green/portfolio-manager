@@ -179,13 +179,20 @@ exports in the same format.
 
 ## Running tests and checks
 
-There is no test suite yet. At minimum, check that everything compiles and
-imports:
+The test suite runs offline. It uses a temporary database for each test and
+stubs the GBP/USD and live price lookups, so it needs no Google, Yahoo or SMTP
+access.
 
 ```bash
-python -m compileall -q .
-python -c "import main, web.app"
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest                                  # 80 tests
+python -m pytest --cov=. --cov-report=term-missing   # with line coverage
 ```
+
+Coverage is about 42% of lines. The main gaps are the market-movers and
+fund-cash reconciliation code (both need live services), the HL report and
+portfolio-balance PDF importers, and the chart builders. Security findings and
+their status are in [docs/security-audit.md](docs/security-audit.md).
 
 ## Privacy
 
