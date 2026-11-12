@@ -44,25 +44,32 @@ Dockerfile and `.dockerignore`, and the dependency pins.
   by the package reorganisation. The bad import is fixed, and a flat-import
   scan of the whole code is clean.
 
-## Open items
+## Items that were open and are now closed
 
-These need a decision or a deployment setting. I did not change them without
-asking.
-
-| Severity | Item | Recommendation |
+| Severity | Item | How it was closed |
 | --- | --- | --- |
-| Medium | **Session cookie is not marked `Secure` by default** (`WEB_SECURE_COOKIES=false`). Over plain HTTP the session can be read on the network. | Set `WEB_SECURE_COOKIES=true` for any deployment reached over HTTPS, which includes PythonAnywhere. The default stays `false` so local HTTP use still works. Consider flipping the default. |
-| Low | **No CSRF tokens.** Protection relies on `SameSite=Lax` cookies and endpoints that accept only JSON bodies. Not tested with a real cross-site request. | Acceptable for now. Add CSRF tokens if the app is ever exposed to untrusted sites. |
-| Low | **Rate-limit counters live in process memory.** They reset on restart and are not shared between workers. | Fine for a single-process deployment. Use a shared store if you run several workers. |
-| Low | **Minimum password length is 8 characters.** | Consider 12 for an app that holds financial data. |
-| Low | **`trade_gui.py` installs `squarify` with `pip` at runtime** if it is missing. | Remove the runtime install. The package is already in `requirements.txt`. |
-| Low | **Twelve `except: pass` / `except: continue` blocks** (bandit B110, B112). They can hide failures. | Review each one. None is an exploit path. |
-| Info | Email and report HTML is escaped in the trade report and reviewed by sampling in the holdings email. It was not reviewed line by line. | Review the email templates in full before sending them to anyone else. |
-| Info | Password-reset emails are sent only to an address stored on the account. SMTP credentials come from `.env`. | No change needed. Keep `.env` out of git and out of the image. |
+| Medium | Session cookie was not `Secure` by default. | `WEB_SECURE_COOKIES` now defaults to `true`. The test suite runs over plain HTTP and sets it to `false` for itself. A subprocess test confirms the code default is `true`. Plain-HTTP local use needs `WEB_SECURE_COOKIES=false` in `.env`. |
+| Low | No CSRF protection beyond `SameSite=Lax`. | A middleware refuses state-changing `/api/` calls unless they send `Content-Type: application/json`, which a cross-site HTML form cannot do. It also refuses any request whose `Origin` header is not this server or `WEB_PUBLIC_URL`. Tests cover both refusals and a same-origin success. The front end now always sends the JSON header. |
+| Low | Minimum password length was 8. | Raised to 12 in the password command, both API models, and the front end. Tests cover the boundary. |
+| Low | `trade_gui.py` installed `squarify` with `pip` at runtime. | Removed. The GUI now reports the missing package and points to `requirements.txt`. |
+| Low | Twelve silent `except` blocks (bandit B110/B112). | Reviewed each one. All are fallbacks for optional data: Yahoo quotes and FX rates, the Google Sheets prefetch, and the opening-cash sync. None makes a security decision. Losing one only leaves a figure stale or missing. Adding logging to them is a reliability improvement, not a security fix. |
+| Info | Email and report HTML was reviewed by sampling. | Reviewed in full. Every user-derived value in the holdings email, trade report and strike-alert email goes through `html.escape`. The remaining interpolations are numbers and colours from code constants. |
+
+## Items accepted with a condition
+
+| Severity | Item | Condition |
+| --- | --- | --- |
+| Low | Rate-limit counters live in process memory and are not shared between workers. | Accepted while the app runs as one process. The container and `python -m web` both start a single uvicorn process. If you add workers, move the counters to a shared store first. |
+
+## Still pending
+
+| Item | What is needed |
+| --- | --- |
+| The Docker image has not been built or inspected. | Start Docker Desktop, then run `docker build -t portfolio-manager .` and check the image with `docker run --rm --entrypoint sh portfolio-manager -c "ls -la /app"`. The listing should contain no `.env`, `settings.json`, databases or statements, and the process should run as user `app`. |
 
 ## Verification
 
-- `pytest`: 80 passed. Line coverage is about 42%.
+- `pytest`: 86 passed. Line coverage is about 42%.
 - `pip-audit -r requirements.txt`: no known vulnerabilities.
 - `bandit` (medium and above): one finding, the bind address, now fixed. The
   remaining `B105` flag is the empty `LOCKED_PASSWORD_HASH` sentinel, which is

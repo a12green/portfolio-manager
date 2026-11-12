@@ -2484,24 +2484,16 @@ class TradeEntryApp(tk.Tk):
 
 
 def _ensure_gui_deps() -> None:
-    """Install heat-map dependency when missing (common if not using project .venv)."""
+    """Check the heat-map dependency. Install it from requirements.txt, never at runtime."""
     try:
         import squarify  # noqa: F401
-    except ImportError:
-        import subprocess
+    except ImportError as e:
         import sys
 
-        cmd = [sys.executable, "-m", "pip", "install", "squarify"]
-        try:
-            subprocess.check_call(cmd)
-            import squarify  # noqa: F401
-        except Exception as e:
-            raise RuntimeError(
-                f"squarify is required for the heat map tab. Run:\n"
-                f"  {sys.executable} -m pip install squarify\n"
-                f"or start the app with:\n"
-                f"  .venv/bin/python main.py --trade-gui"
-            ) from e
+        raise RuntimeError(
+            "squarify is required for the heat map tab. Install the pinned requirements:\n"
+            f"  {sys.executable} -m pip install -r requirements.txt"
+        ) from e
 
 
 def main() -> None:

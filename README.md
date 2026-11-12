@@ -166,7 +166,7 @@ exports in the same format.
 - Passwords are hashed with bcrypt. Changing a password signs the account out
   everywhere else.
 - Password-reset emails use `WEB_PUBLIC_URL` to build the reset link.
-- Set `WEB_SECURE_COOKIES=true` when serving over HTTPS.
+- Session cookies are `Secure` by default, so they are sent only over HTTPS. For plain-HTTP local use, set `WEB_SECURE_COOKIES=false` in `.env`. Some browsers, Safari among them, refuse `Secure` cookies on `http://localhost`.
 
 ## Deployment
 
@@ -185,7 +185,7 @@ access.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                                  # 80 tests
+python -m pytest                                  # 86 tests
 python -m pytest --cov=. --cov-report=term-missing   # with line coverage
 ```
 
