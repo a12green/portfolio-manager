@@ -11,7 +11,6 @@ from pathlib import Path
 
 from ledger.db import connect_db
 from ledger.trades_db import (
-    TradeFund,
     fetch_mark_prices_for_owner,
     fetch_trades_for_fund,
     init_trade_schema,
@@ -456,7 +455,7 @@ def fetch_live_marks_for_owner(
     return dict(marks)
 
 
-def _sheet_symbols(owner: str) -> list[tuple[str, str]]:
+def _holdings_file_symbols(owner: str) -> list[tuple[str, str]]:
     try:
         from main import _prepare_holdings, load_portfolio_dataframe
     except Exception:
@@ -479,7 +478,7 @@ def collect_quote_symbols(
     *,
     owner: str | None = None,
 ) -> list[tuple[str, str]]:
-    """Tickers needing quotes from trade ledgers (+ sheet holdings for sheet-only owners)."""
+    """Tickers needing quotes from trade ledgers (+ holdings-file positions for owners without a trade ledger)."""
     from pathlib import Path
 
     from ledger.trade_ledger import build_fund_ledger
@@ -536,7 +535,7 @@ def collect_quote_symbols(
         if not any(f.owner == o for f in funds) and owner is None:
             continue
         if owner is None or o == owner:
-            for ticker, cur in _sheet_symbols(o):
+            for ticker, cur in _holdings_file_symbols(o):
                 add(ticker, cur)
 
     return symbols
@@ -554,8 +553,8 @@ def infer_mark_currency(raw_ticker: str) -> str:
     return "USD"
 
 
-def sheet_ticker_currencies(owner: str) -> dict[str, str]:
-    """Normalized ticker → currency from the Google sheet Location column."""
+def holdings_file_currencies(owner: str) -> dict[str, str]:
+    """Normalized ticker → currency from the holdings file Location column."""
     try:
         from main import _prepare_holdings, load_portfolio_dataframe
 
@@ -601,14 +600,14 @@ def fetch_owner_marks_with_currency(
     live: bool = False,
     force_live: bool = False,
 ) -> dict[str, tuple[float, str]]:
-    """Owner mark prices with native currency (sheet snapshots are not all USD)."""
-    sheet_curs = sheet_ticker_currencies(owner)
+    """Owner mark prices with native currency (holdings-file tickers are not all USD)."""
+    file_curs = holdings_file_currencies(owner)
     out: dict[str, tuple[float, str]] = {}
     for raw_ticker, price in fetch_mark_prices_for_owner(conn, owner).items():
         norm = normalize_ticker(raw_ticker)
         cur = infer_mark_currency(raw_ticker)
         if cur == "USD":
-            cur = sheet_curs.get(norm, cur)
+            cur = file_curs.get(norm, cur)
         out[norm] = (float(price), cur)
 
     if not live:

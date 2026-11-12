@@ -3,7 +3,7 @@ from __future__ import annotations
 import html as html_module
 from datetime import date
 
-from ledger.trade_ledger import FundLedgerResult, ProcessedTrade
+from ledger.trade_ledger import FundLedgerResult
 
 
 def _fmt_money(amount: float, currency: str) -> str:

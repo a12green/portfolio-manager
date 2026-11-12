@@ -12,7 +12,7 @@ Configuration:
 3. Set environment variables in Web tab (not via .env):
    - WEB_SECURE_COOKIES=true
    - STORAGE_DB_PATH=/home/yourusername/mysite/data/portfolio_history.sqlite3
-   - GOOGLE_SERVICE_ACCOUNT_FILE=/home/yourusername/mysite/secrets/service-account.json
+   - PORTFOLIO_CSV_PATH=/home/yourusername/mysite/Stocks.csv
    - (all other .env variables)
 """
 

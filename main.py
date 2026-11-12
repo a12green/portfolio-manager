@@ -5,7 +5,7 @@ import argparse
 import html as html_module
 import os
 import smtplib
-from datetime import date, timedelta
+from datetime import date
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -14,19 +14,15 @@ from pathlib import Path
 from typing import Sequence
 
 import pandas as pd
-import gspread
 from dotenv import load_dotenv
-from google.oauth2.service_account import Credentials
 
 from ledger.option_symbols import is_occ_symbol
 from ledger.db import (
     StockSnapshotRow,
     connect_db,
     init_schema,
-    replace_fund_weekly_snapshots,
     upsert_stock_daily_snapshots,
 )
-from importers.funds import load_fund_lines_from_sheet
 from importers.import_funds import import_fund_history_csv
 import trades_cli
 from ledger.money import parse_money_scalar, parse_pct_scalar
@@ -42,9 +38,9 @@ _STOCK_COL = "Stock"
 _COLOR_GOOD = "#2e7d32"
 _COLOR_BAD = "#c62828"
 
-# Section order in the email (unknown names from the sheet are appended after these).
+# Section order in the email (unknown names from the holdings file are appended after these).
 _PORTFOLIO_SECTION_ORDER = (OWNER_A, OWNER_C, OWNER_B)
-# Labels in the email (the sheet uses the owner name from settings.json).
+# Labels in the email (the holdings file uses the owner name from settings.json).
 _PORTFOLIO_DISPLAY = {OWNER_A: OWNER_A, OWNER_C: OWNER_C, OWNER_B: OWNER_B}
 
 
@@ -84,38 +80,6 @@ def _pdf_output_path() -> Path:
     return Path(os.getenv("PDF_OUTPUT_PATH", "reports/portfolio_report.pdf")).expanduser()
 
 
-def iso_week_monday(d: date) -> date:
-    return d - timedelta(days=d.weekday())
-
-
-def load_sheet_dataframe() -> pd.DataFrame:
-    service_account_file = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "service-account.json")
-    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
-    sheet_name = os.getenv("GOOGLE_SHEET_NAME", "Portfolio")
-
-    if not spreadsheet_id:
-        raise ValueError("GOOGLE_SHEETS_SPREADSHEET_ID is required.")
-
-    sa_path = Path(service_account_file).expanduser()
-    if not sa_path.is_file():
-        raise FileNotFoundError(
-            f"Service account key not found at {sa_path.resolve()}. "
-            "Download the JSON key from Google Cloud and save it there, or unset GOOGLE_SHEETS_SPREADSHEET_ID "
-            "to use local Stocks.csv / PORTFOLIO_CSV_PATH instead."
-        )
-
-    scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    credentials = Credentials.from_service_account_file(str(sa_path), scopes=scopes)
-    client = gspread.authorize(credentials)
-
-    worksheet = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
-    records = worksheet.get_all_records()
-    if not records:
-        raise ValueError(f"Sheet '{sheet_name}' is empty.")
-
-    return pd.DataFrame(records)
-
-
 def load_csv_dataframe(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     if df.empty:
@@ -125,25 +89,20 @@ def load_csv_dataframe(path: Path) -> pd.DataFrame:
 
 def load_portfolio_dataframe() -> pd.DataFrame:
     """
-    Prefer Google Sheets when configured; otherwise load a local CSV for development.
+    Load holdings from a local CSV: PORTFOLIO_CSV_PATH, or Stocks.csv next to main.py.
 
     Expected columns: export layout Symbol / Share Qty / Average Purchase Price / Current Price
     plus Stock; portfolio blocks are introduced by rows with Stock=Portfolio and Symbol=name
     (see Stocks.csv).
     """
-    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "").strip()
     csv_override = os.getenv("PORTFOLIO_CSV_PATH", "").strip()
-
-    if spreadsheet_id:
-        return load_sheet_dataframe()
     if csv_override:
         return load_csv_dataframe(Path(csv_override).expanduser())
     default_csv = _project_dir() / "Stocks.csv"
     if default_csv.is_file():
         return load_csv_dataframe(default_csv)
     raise ValueError(
-        "No data source configured: set GOOGLE_SHEETS_SPREADSHEET_ID for Sheets, "
-        "or PORTFOLIO_CSV_PATH, or add Stocks.csv next to main.py."
+        "No holdings file configured: set PORTFOLIO_CSV_PATH, or add Stocks.csv next to main.py."
     )
 
 
@@ -249,8 +208,8 @@ def _prepare_holdings(df: pd.DataFrame) -> pd.DataFrame:
         if section_mkt <= 0:
             continue
         computed = work.loc[mask, "mkt_value"] / section_mkt * 100.0
-        sheet_pct = work.loc[mask, "portfolio_pct"]
-        work.loc[mask, "portfolio_pct"] = sheet_pct.where(sheet_pct.notna(), computed)
+        given_pct = work.loc[mask, "portfolio_pct"]
+        work.loc[mask, "portfolio_pct"] = given_pct.where(given_pct.notna(), computed)
 
     work["portfolio_pct"] = work["portfolio_pct"].fillna(0.0)
 
@@ -624,26 +583,6 @@ def run_snapshot_stocks_daily(as_of: date | None = None) -> int:
     return n
 
 
-def run_snapshot_funds_weekly(week_start: date | None = None) -> None:
-    week_start = week_start or iso_week_monday(date.today())
-    by_owner = load_fund_lines_from_sheet(week_start)
-
-    dbp = _db_path()
-    conn = connect_db(dbp)
-    total = 0
-    try:
-        init_schema(conn)
-        for owner in (OWNER_A, OWNER_B, OWNER_C):
-            lines = by_owner[owner]
-            if lines:
-                total += replace_fund_weekly_snapshots(conn, week_start, owner, lines)
-    finally:
-        conn.close()
-    print(
-        f"Saved {total} fund line(s) for week starting {week_start.isoformat()} → {dbp.resolve()}"
-    )
-
-
 def run_import_funds_csv(csv_path: Path) -> int:
     dbp = _db_path()
     conn = connect_db(dbp)
@@ -686,7 +625,6 @@ def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Portfolio holdings mailer + SQLite history + PDF reports.")
     parser.add_argument("--snapshot-stocks-daily", action="store_true", help="Upsert today's stock holdings into SQLite.")
-    parser.add_argument("--snapshot-funds-weekly", action="store_true", help="Upsert this ISO week's fund totals into SQLite.")
     parser.add_argument("--pdf-report", action="store_true", help="Generate graphical PDF from SQLite history.")
     parser.add_argument("--email-holdings", action="store_true", help="Email holdings report (same content as legacy default).")
     parser.add_argument(
@@ -895,7 +833,6 @@ def main() -> None:
     args = parser.parse_args()
     ran_any_flag = (
         args.snapshot_stocks_daily
-        or args.snapshot_funds_weekly
         or args.pdf_report
         or args.email_holdings
         or args.market_status
@@ -973,9 +910,6 @@ def main() -> None:
     pdf_path_written: Path | None = None
     if args.snapshot_stocks_daily:
         run_snapshot_stocks_daily()
-
-    if args.snapshot_funds_weekly:
-        run_snapshot_funds_weekly()
 
     if args.import_funds_csv is not None:
         run_import_funds_csv(args.import_funds_csv)

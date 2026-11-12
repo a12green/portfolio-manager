@@ -14,7 +14,6 @@ from reports.trade_report import build_trade_report
 from ledger.trades_db import (
     create_fund,
     fetch_fund_performance_history,
-    fetch_mark_prices_for_owner,
     fetch_trades_for_fund,
     get_fund_by_name,
     init_trade_schema,

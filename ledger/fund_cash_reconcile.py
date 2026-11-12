@@ -6,48 +6,13 @@ import sqlite3
 from datetime import date
 
 from ledger.quotes import marks_for_fund
-from ledger.trade_ledger import build_fund_ledger, build_fund_ledger_with_db
+from ledger.trade_ledger import build_fund_ledger
 from ledger.trades_db import (
-    TradeFund,
-    fetch_fund_manual_balances,
     get_fund_by_name,
     init_trade_schema,
-    list_funds,
     upsert_fund_manual_balance,
     upsert_fund_performance_snapshot,
 )
-
-
-def _latest_performance_snapshot_cash(conn: sqlite3.Connection, fund_id: int) -> float | None:
-    row = conn.execute(
-        """
-        SELECT cash_balance
-        FROM fund_performance_snapshots
-        WHERE fund_id = ?
-        ORDER BY snapshot_date DESC
-        LIMIT 1
-        """,
-        (fund_id,),
-    ).fetchone()
-    if row is None:
-        return None
-    return float(row[0])
-
-
-def _fund_for_sheet_row(
-    row,
-    funds_by_name: dict[str, TradeFund],
-    funds_by_owner: dict[str, list[TradeFund]],
-) -> TradeFund | None:
-    """Match a Fund List row to a trade_funds record."""
-    fund = funds_by_name.get(row.fund_name)
-    if fund is not None:
-        return fund
-    owner = str(row.owner).strip()
-    owner_funds = funds_by_owner.get(owner, [])
-    if len(owner_funds) == 1:
-        return owner_funds[0]
-    return None
 
 
 def reconcile_opening_cash_to_target(
@@ -93,45 +58,6 @@ def reconcile_opening_cash_to_target(
     )
     conn.commit()
     return new_opening
-
-
-def sync_opening_cash_from_fund_list(conn: sqlite3.Connection) -> dict[str, float]:
-    """Reconcile opening cash from Fund List cash balances and HL/Aussuper snapshots."""
-    from importers.funds import load_fund_lines_from_sheet
-
-    init_trade_schema(conn)
-    lines = load_fund_lines_from_sheet(date.today())
-    updated: dict[str, float] = {}
-    funds = list_funds(conn)
-    funds_by_name = {f.name: f for f in funds}
-    funds_by_owner: dict[str, list[TradeFund]] = {}
-    for fund in funds:
-        funds_by_owner.setdefault(fund.owner.strip(), []).append(fund)
-    manual = fetch_fund_manual_balances(conn)
-
-    targets: dict[str, float] = {}
-
-    for owner_rows in lines.values():
-        for row in owner_rows:
-            fund = _fund_for_sheet_row(row, funds_by_name, funds_by_owner)
-            if fund is None:
-                continue
-            m = manual.get(fund.id)
-            if m is not None and m.cash_balance is not None:
-                targets[fund.name] = float(m.cash_balance)
-                continue
-            if row.current_cash_balance is not None:
-                targets[fund.name] = float(row.current_cash_balance)
-                continue
-            snap_cash = _latest_performance_snapshot_cash(conn, fund.id)
-            if snap_cash is not None:
-                targets[fund.name] = snap_cash
-
-    for fund_name, target_cash in targets.items():
-        new_opening = reconcile_opening_cash_to_target(conn, fund_name, target_cash)
-        if new_opening is not None:
-            updated[fund_name] = new_opening
-    return updated
 
 
 def apply_broker_portal_balance(

@@ -7,7 +7,7 @@ import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
-from ledger.db import FundWeeklyRow, connect_db, init_schema, upsert_fund_weekly_snapshot
+from ledger.db import FundWeeklyRow, init_schema, upsert_fund_weekly_snapshot
 from ledger.money import parse_money_scalar
 
 _VALID_OWNERS = frozenset({OWNER_A, OWNER_B, OWNER_C})

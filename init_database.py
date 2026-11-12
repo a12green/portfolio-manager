@@ -8,10 +8,9 @@ Run this once after deploying to PythonAnywhere:
 This will:
 1. Create SQLite schema
 2. Create default users (change passwords afterward!)
-3. Test Google Sheets connection (optional)
+3. Show the next steps
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -51,51 +50,18 @@ def init_database():
     finally:
         conn.close()
 
-def test_google_sheets():
-    """Test Google Sheets connection (optional)."""
-    from dotenv import load_dotenv
-    import gspread
-    from google.oauth2.service_account import Credentials
-    
-    load_dotenv()
-    
-    service_account = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
-    sheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
-    
-    if not service_account or not sheet_id:
-        print("\n⏭️  Skipping Google Sheets test (not configured in .env)")
-        return
-    
-    try:
-        print("\n📊 Testing Google Sheets connection...")
-        creds = Credentials.from_service_account_file(
-            service_account,
-            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-        )
-        client = gspread.authorize(creds)
-        sheet = client.open_by_key(sheet_id)
-        print(f"   ✓ Connected to spreadsheet: '{sheet.title}'")
-        print(f"   ✓ Worksheets: {', '.join(ws.title for ws in sheet.worksheets()[:5])}")
-    except FileNotFoundError:
-        print(f"   ✗ Service account file not found: {service_account}")
-        print("     → Upload service-account.json to PythonAnywhere")
-    except Exception as e:
-        print(f"   ✗ Error: {e}")
-        print("     → Check GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEETS_SPREADSHEET_ID")
-
 def main():
     """Run initialization steps."""
     print("\n🚀 Portfolio Manager - Database Initialization\n")
     
     try:
         init_database()
-        test_google_sheets()
         
         print("\n✅ Initialization complete!")
         print("\n📝 Next steps:")
         print("   1. Visit your app: https://yourusername.pythonanywhere.com")
         print("   2. Set the admin password: python -m web.set_password admin")
-        print("   3. Upload portfolio data or import from Google Sheets")
+        print("   3. Put your holdings file in place (Stocks.csv, or set PORTFOLIO_CSV_PATH)")
         
     except Exception as e:
         print(f"\n❌ Error during initialization: {e}")

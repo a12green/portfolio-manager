@@ -18,12 +18,12 @@ from ledger.trades_db import (
 
 _PORTFOLIO_OWNERS = (OWNER_A, OWNER_B, OWNER_C)
 HeatmapColorBy = Literal["overall", "day"]
-_sheet_tiles_cache: dict[str, tuple[float, tuple[HeatmapTile, ...]]] = {}
-_SHEET_CACHE_TTL_SEC = 300.0
+_holdings_tiles_cache: dict[str, tuple[float, tuple[HeatmapTile, ...]]] = {}
+_HOLDINGS_CACHE_TTL_SEC = 300.0
 
 
 def clear_heatmap_caches() -> None:
-    _sheet_tiles_cache.clear()
+    _holdings_tiles_cache.clear()
 
 
 @dataclass(frozen=True)
@@ -91,12 +91,12 @@ def collect_heatmap_tiles(
     finally:
         conn.close()
 
-    # OWNER_C (and similar) often live only on the Portfolio sheet — no trade fund yet.
+    # OWNER_C (and similar) often live only in the holdings file — no trade fund yet.
     if not fund_filter:
-        owners_for_sheet = [owner_filter] if owner_filter else list(_PORTFOLIO_OWNERS)
-        for o in owners_for_sheet:
+        owners_for_file = [owner_filter] if owner_filter else list(_PORTFOLIO_OWNERS)
+        for o in owners_for_file:
             if not any(f.owner == o for f in all_funds):
-                tiles.extend(_tiles_from_sheet(o))
+                tiles.extend(_tiles_from_holdings_file(o))
 
     if not fund_filter and len(funds) > 1:
         tiles = aggregate_tiles_by_ticker(tiles)
@@ -268,7 +268,7 @@ def aggregate_tiles_by_ticker(tiles: list[HeatmapTile]) -> list[HeatmapTile]:
     return merged
 
 
-def _normalize_sheet_ticker(raw: str) -> str:
+def _normalize_holdings_ticker(raw: str) -> str:
     s = str(raw).strip().upper()
     if ":" in s:
         s = s.rsplit(":", 1)[-1]
@@ -282,13 +282,13 @@ def _currency_from_location(loc: str) -> str:
     return "USD"
 
 
-def _tiles_from_sheet(owner: str) -> list[HeatmapTile]:
-    """Holdings from Portfolio sheet / Stocks.csv when no trade ledger exists for owner."""
+def _tiles_from_holdings_file(owner: str) -> list[HeatmapTile]:
+    """Holdings from the holdings file (Stocks.csv) when no trade ledger exists for owner."""
     now = time.time()
-    cached = _sheet_tiles_cache.get(owner)
+    cached = _holdings_tiles_cache.get(owner)
     if cached is not None:
         ts, tiles = cached
-        if now - ts < _SHEET_CACHE_TTL_SEC:
+        if now - ts < _HOLDINGS_CACHE_TTL_SEC:
             return list(tiles)
 
     try:
@@ -306,7 +306,7 @@ def _tiles_from_sheet(owner: str) -> list[HeatmapTile]:
             continue
         out.append(
             HeatmapTile(
-                ticker=_normalize_sheet_ticker(row["Ticker"]),
+                ticker=_normalize_holdings_ticker(row["Ticker"]),
                 fund_name=f"{owner} portfolio",
                 owner=owner,
                 value=value,
@@ -316,7 +316,7 @@ def _tiles_from_sheet(owner: str) -> list[HeatmapTile]:
                 currency=_currency_from_location(str(row.get("Location", ""))),
             )
         )
-    _sheet_tiles_cache[owner] = (now, tuple(out))
+    _holdings_tiles_cache[owner] = (now, tuple(out))
     return out
 
 
