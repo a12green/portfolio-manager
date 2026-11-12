@@ -22,6 +22,32 @@ from ttkbootstrap.style.theme import Theme
 
 import trades_cli
 
+from gui_logic.formatting import (
+    currency_loc as _currency_loc,
+    fmt_money as _fmt_money,
+    fmt_pct as _fmt_pct,
+    pl_row_tag as _pl_row_tag,
+    port_owner_label,
+    tree_row_tags as _tree_row_tags,
+)
+from gui_logic.tables import (
+    balance_row_cells,
+    trade_row_cells,
+    balances_summary,
+    fund_holding_rows,
+    fund_holdings_summary,
+    net_worth_cells,
+    net_worth_summary,
+    net_worth_total_text,
+)
+from gui_logic.forms import (
+    FormError,
+    parse_balance_form,
+    parse_fund_form,
+    parse_other_asset_form,
+    parse_trade_form,
+)
+
 _OWNERS = (OWNER_A, OWNER_B, OWNER_C)
 _PORT_OWNERS = ("All",) + _OWNERS
 _SIDES = ("buy", "sell")
@@ -30,9 +56,7 @@ _OTHER_ASSET_CURRENCIES = ("USD", "AUD", "GBP")
 
 
 def _port_owner_label(owner: str) -> str:
-    if owner.strip().lower() == "all":
-        return "All owners"
-    return _DISPLAY.get(owner, owner)
+    return port_owner_label(owner, _DISPLAY)
 _PORT_MARKETS = ("All", "Australia", "United States")
 _FUND_LOCATIONS = ("All", "United States", "Australia", "United Kingdom")
 
@@ -185,86 +209,6 @@ def _setup_tree_stripes(tree: ttk.Treeview, *, avg_colors: bool = False) -> None
         tree.tag_configure("avg_good", background=c.success, foreground=_PL_TAG_FG)
         tree.tag_configure("avg_bad", background=c.danger, foreground=_PL_TAG_FG)
     tree.tag_configure("stripe", background=c.active)
-
-
-def _tree_row_tags(row_index: int, extra: str = "") -> tuple[str, ...]:
-    tags: list[str] = []
-    if row_index % 2 == 1:
-        tags.append("stripe")
-    if extra:
-        tags.append(extra)
-    return tuple(tags)
-
-
-def _pl_row_tag(amount: float | None) -> str:
-    """Green background for gain/break-even, red for loss."""
-    return "avg_good" if (amount or 0) >= 0 else "avg_bad"
-
-
-def _parse_trade_date(raw: str) -> date:
-    text = raw.strip()
-    if not text:
-        return date.today()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError("Use a date like YYYY-MM-DD (or leave blank for today).")
-
-
-def _fmt_money(amount: float, location: str = "") -> str:
-    loc = str(location).upper()
-    if loc == "AUS":
-        return f"A${amount:,.2f}"
-    return f"${amount:,.2f}"
-
-
-def _fmt_pct(v: float) -> str:
-    sign = "+" if v > 0 else ""
-    return f"{sign}{v:.2f}%"
-
-
-def _currency_loc(currency: str) -> str:
-    c = str(currency or "").upper()
-    if c == "AUD":
-        return "AUS"
-    if c == "GBP":
-        return "UK"
-    return "US"
-
-
-def _fmt_fund_money(amount: float | None, currency: str) -> str:
-    if amount is None:
-        return "—"
-    return _fmt_money(amount, _currency_loc(currency))
-
-
-def _fmt_price_cell(amount: float | None, location: str = "") -> str:
-    if amount is None:
-        return "—"
-    return _fmt_money(amount, location)
-
-
-def _holding_market(loc: str, ticker: str = "") -> str:
-    """AU for Australian listings; otherwise US (holdings file Location convention)."""
-    loc = str(loc or "").strip().upper()
-    tick = str(ticker or "").strip().upper()
-    if loc in ("AUS", "AUD", "AU") or tick.startswith("ASX:"):
-        return "AU"
-    return "US"
-
-
-def _matches_port_market(loc: str, ticker: str, market_sel: str) -> bool:
-    sel = market_sel.strip()
-    if not sel or sel == "All":
-        return True
-    m = _holding_market(loc, ticker)
-    if sel.startswith("Austral"):
-        return m == "AU"
-    if sel.startswith("United") or sel == "US":
-        return m == "US"
-    return True
 
 
 class TradeEntryApp(tk.Tk):
@@ -1076,26 +1020,14 @@ class TradeEntryApp(tk.Tk):
                 "",
                 tk.END,
                 iid=f"{line.kind}:{line.label}",
-                values=(
-                    line.label,
-                    line.kind,
-                    line.currency,
-                    _fmt_fund_money(line.amount_local, line.currency),
-                    _fmt_fund_money(line.amount_usd, "USD"),
-                    line.as_of,
-                    line.source,
-                ),
+                values=net_worth_cells(line),
             )
 
-        fx_note = " · ".join(
-            f"{cur} {rate:.4f}" for cur, rate in sorted(result.fx_rates.items()) if cur not in ("USD", "US")
-        )
-        mode = "live" if use_live else "cached"
+        owner_label = _port_owner_label(owner)
         self.nw_summary_var.set(
-            f"{len(result.lines)} item(s) for {_port_owner_label(owner)} · FX ({mode}): {fx_note or 'USD only'} · "
-            "funds use the manual balance when set, otherwise the live ledger total"
+            net_worth_summary(result.fx_rates, len(result.lines), owner_label, use_live)
         )
-        self.nw_total_var.set(f"Total ({_port_owner_label(owner)}): {_fmt_fund_money(result.total_usd, 'USD')}")
+        self.nw_total_var.set(net_worth_total_text(result.total_usd, owner_label))
         self.nw_total_label.configure(
             style="TotalGood.TLabel" if result.total_usd >= 0 else "TotalBad.TLabel"
         )
@@ -1126,28 +1058,27 @@ class TradeEntryApp(tk.Tk):
         from ledger.db import connect_db
         from ledger.trades_db import upsert_owner_other_asset
 
-        owner = self.nw_owner_var.get().strip()
-        asset_type = self.nw_asset_type_var.get().strip()
-        if not owner or not asset_type:
-            messagebox.showwarning("Net worth", "Select an owner and asset type.")
-            return
         try:
-            amount = self._parse_optional_amount(self.nw_asset_amount_var.get())
-            if amount is None:
-                raise ValueError("Enter an amount.")
-        except ValueError as e:
-            messagebox.showerror("Net worth", str(e))
+            form = parse_other_asset_form(
+                owner=self.nw_owner_var.get(),
+                asset_type=self.nw_asset_type_var.get(),
+                amount_text=self.nw_asset_amount_var.get(),
+                currency_text=self.nw_asset_currency_var.get(),
+                notes_text=self.nw_asset_notes_var.get(),
+            )
+        except FormError as e:
+            messagebox.showwarning("Net worth", str(e))
             return
-        currency = self.nw_asset_currency_var.get().strip() or "USD"
-        notes = self.nw_asset_notes_var.get().strip() or None
 
         conn = connect_db(trades_cli._db_path())
         try:
-            upsert_owner_other_asset(conn, owner, asset_type, amount, currency=currency, notes=notes)
+            upsert_owner_other_asset(
+                conn, form.owner, form.asset_type, form.amount, currency=form.currency, notes=form.notes
+            )
         finally:
             conn.close()
 
-        self.status_var.set(f"Saved {asset_type} for {_port_owner_label(owner)}.")
+        self.status_var.set(f"Saved {form.asset_type} for {_port_owner_label(form.owner)}.")
         self.refresh_net_worth(use_live=False)
 
     def delete_other_asset(self) -> None:
@@ -1720,12 +1651,6 @@ class TradeEntryApp(tk.Tk):
         if names and self.bal_fund_var.get() not in names:
             self.bal_fund_var.set(names[0])
 
-    def _parse_optional_amount(self, raw: str) -> float | None:
-        text = raw.strip().replace(",", "").replace("$", "")
-        if not text:
-            return None
-        return float(text)
-
     def _ledger_for_fund(self, conn, fund) -> tuple[float, float, float] | None:
         from ledger.trade_ledger import build_fund_ledger_with_db
         from ledger.quotes import marks_for_fund
@@ -1762,25 +1687,22 @@ class TradeEntryApp(tk.Tk):
                     "",
                     tk.END,
                     iid=str(fund.id),
-                    values=(
-                        fund.name,
-                        fund.owner,
-                        fund.currency,
-                        _fmt_fund_money(m.nav if m else None, fund.currency),
-                        _fmt_fund_money(m.cash_balance if m else None, fund.currency),
-                        _fmt_fund_money(m.positions_value if m else None, fund.currency),
-                        m.balance_date.isoformat() if m else "—",
-                        _fmt_fund_money(led_nav, fund.currency),
-                        _fmt_fund_money(led_cash, fund.currency),
+                    values=balance_row_cells(
+                        name=fund.name,
+                        owner=fund.owner,
+                        currency=fund.currency,
+                        manual_nav=m.nav if m else None,
+                        manual_cash=m.cash_balance if m else None,
+                        manual_positions=m.positions_value if m else None,
+                        manual_date=m.balance_date.isoformat() if m else None,
+                        ledger_nav=led_nav,
+                        ledger_cash=led_cash,
                     ),
                 )
         finally:
             conn.close()
 
-        self.bal_summary_var.set(
-            f"{len(funds)} fund(s) · {len(manual)} manual balance(s) on file · "
-            "ledger totals from trades + stored mark prices"
-        )
+        self.bal_summary_var.set(balances_summary(len(funds), len(manual)))
         if self.bal_fund_var.get():
             self._load_balance_form_for_fund()
         self.status_var.set("Fund balances updated.")
@@ -1831,42 +1753,39 @@ class TradeEntryApp(tk.Tk):
         from ledger.db import connect_db
         from ledger.trades_db import get_fund_by_name, init_trade_schema, upsert_fund_manual_balance
 
-        name = self.bal_fund_var.get().strip()
-        if not name:
-            messagebox.showwarning("Fund balance", "Select a fund.")
-            return
         try:
-            as_of = _parse_trade_date(self.bal_date_var.get())
-            nav = self._parse_optional_amount(self.bal_nav_var.get())
-            if nav is None:
-                raise ValueError("Enter a total balance (NAV).")
-            cash = self._parse_optional_amount(self.bal_cash_var.get())
-            pos = self._parse_optional_amount(self.bal_pos_var.get())
-            notes = self.bal_notes_var.get().strip() or None
-        except ValueError as e:
+            form = parse_balance_form(
+                fund_name=self.bal_fund_var.get(),
+                date_text=self.bal_date_var.get(),
+                nav_text=self.bal_nav_var.get(),
+                cash_text=self.bal_cash_var.get(),
+                positions_text=self.bal_pos_var.get(),
+                notes_text=self.bal_notes_var.get(),
+            )
+        except FormError as e:
             messagebox.showerror("Fund balance", str(e))
             return
 
         conn = connect_db(trades_cli._db_path())
         try:
             init_trade_schema(conn)
-            fund = get_fund_by_name(conn, name)
+            fund = get_fund_by_name(conn, form.fund_name)
             if not fund:
-                messagebox.showerror("Fund balance", f"Unknown fund {name!r}.")
+                messagebox.showerror("Fund balance", f"Unknown fund {form.fund_name!r}.")
                 return
             upsert_fund_manual_balance(
                 conn,
                 fund.id,
-                as_of,
-                nav,
-                cash_balance=cash,
-                positions_value=pos,
-                notes=notes,
+                form.as_of,
+                form.nav,
+                cash_balance=form.cash,
+                positions_value=form.positions,
+                notes=form.notes,
             )
         finally:
             conn.close()
 
-        self.status_var.set(f"Saved manual balance for {name}.")
+        self.status_var.set(f"Saved manual balance for {form.fund_name}.")
         self.refresh_fund_balances()
 
     def clear_manual_fund_balance(self) -> None:
@@ -1920,25 +1839,7 @@ class TradeEntryApp(tk.Tk):
             conn.close()
 
         for t in reversed(trades):
-            from ledger.option_symbols import display_option_label
-
-            label = t.ticker
-            if t.is_option:
-                label = display_option_label(occ_symbol=t.ticker)
-            self.trade_tree.insert(
-                "",
-                tk.END,
-                values=(
-                    t.id,
-                    t.trade_date.isoformat(),
-                    t.instrument_type,
-                    t.side.upper(),
-                    label,
-                    f"{t.shares:g}",
-                    f"{t.price:.2f}",
-                    f"{t.fees:.2f}",
-                ),
-            )
+            self.trade_tree.insert("", tk.END, values=trade_row_cells(t))
 
     def refresh_portfolio_view(self, *, use_live: bool = False) -> None:
         self._portfolio_job += 1
@@ -2172,65 +2073,24 @@ class TradeEntryApp(tk.Tk):
             return
         self._fund_holdings_rows = rows
         self._render_fund_holdings_rows()
-        n_funds = len({(r.owner, r.fund) for r in rows})
-        self.fh_summary_var.set(
-            f"{label}: {len(rows)} holdings across {n_funds} fund(s) · all prices in USD "
-            "(Fund Ccy shows the fund's own reporting currency) · "
-            "click a column header to sort · same ticker in multiple funds shows as separate rows."
-        )
+        self.fh_summary_var.set(fund_holdings_summary(rows, label))
         if use_live:
             self.status_var.set(f"Live prices updated · {datetime.now():%H:%M}")
         else:
             self.status_var.set(f"Holdings by fund updated for {label}.")
 
     def _render_fund_holdings_rows(self) -> None:
-        from reports.portfolio_data import _matches_port_market
-
-        market_sel = self.fh_market_var.get().strip()
-        ticker_sel = self.fh_ticker_var.get().strip().upper()
-
-        rows = [
-            r
-            for r in getattr(self, "_fund_holdings_rows", [])
-            if _matches_port_market(r.market, market_sel)
-            and (not ticker_sel or ticker_sel in r.ticker)
-        ]
-
         sort_col, sort_desc = getattr(self, "_fund_holdings_sort_state", (None, False))
-        if sort_col:
-            key_fns = {
-                "owner": lambda r: r.owner,
-                "fund": lambda r: r.fund,
-                "ccy": lambda r: r.native_currency,
-                "ticker": lambda r: r.ticker,
-                "shares": lambda r: r.shares,
-                "avg": lambda r: r.avg_cost,
-                "mark": lambda r: r.mark_price or 0.0,
-                "value": lambda r: r.market_value or 0.0,
-                "unreal": lambda r: r.unrealized_pl or 0.0,
-                "pct": lambda r: r.pct_of_fund or 0.0,
-            }
-            rows = sorted(rows, key=key_fns[sort_col], reverse=sort_desc)
-
+        rows = fund_holding_rows(
+            getattr(self, "_fund_holdings_rows", []),
+            self.fh_market_var.get().strip(),
+            self.fh_ticker_var.get(),
+            sort_col,
+            sort_desc,
+        )
         self._clear_tree(self.fund_holdings_tree)
-        for i, r in enumerate(rows):
-            self.fund_holdings_tree.insert(
-                "",
-                tk.END,
-                tags=_tree_row_tags(i, _pl_row_tag(r.unrealized_pl)),
-                values=(
-                    r.owner,
-                    r.fund,
-                    r.native_currency,
-                    r.ticker,
-                    f"{r.shares:g}",
-                    _fmt_money(r.avg_cost),
-                    _fmt_money(r.mark_price) if r.mark_price is not None else "—",
-                    _fmt_money(r.market_value) if r.market_value is not None else "—",
-                    _fmt_money(r.unrealized_pl) if r.unrealized_pl is not None else "—",
-                    _fmt_pct(r.pct_of_fund) if r.pct_of_fund is not None else "—",
-                ),
-            )
+        for tags, cells in rows:
+            self.fund_holdings_tree.insert("", tk.END, tags=tags, values=cells)
 
     def _sort_fund_holdings_tree(self, col: str) -> None:
         prev_col, prev_desc = getattr(self, "_fund_holdings_sort_state", (None, False))
@@ -2239,28 +2099,25 @@ class TradeEntryApp(tk.Tk):
         self._render_fund_holdings_rows()
 
     def create_fund(self) -> None:
-        name = self.fund_name_var.get().strip()
-        if not name:
-            messagebox.showwarning("New fund", "Enter a fund name.")
-            return
         try:
-            cash = float(self.fund_cash_var.get().strip().replace(",", "") or "0")
-        except ValueError:
-            messagebox.showerror("New fund", "Opening cash must be a number.")
-            return
-        try:
-            trades_cli.run_fund_add(
-                name,
-                self.fund_owner_var.get().strip(),
-                cash,
-                self.fund_currency_var.get().strip(),
+            form = parse_fund_form(
+                name=self.fund_name_var.get(),
+                owner=self.fund_owner_var.get(),
+                cash_text=self.fund_cash_var.get(),
+                currency=self.fund_currency_var.get(),
             )
+        except FormError as e:
+            messagebox.showwarning("New fund", str(e))
+            return
+        try:
+            trades_cli.run_fund_add(form.name, form.owner, form.opening_cash, form.currency)
         except ValueError as e:
             messagebox.showerror("New fund", str(e))
             return
+        name = form.name
         self.fund_name_var.set("")
         self.trade_fund_var.set(name)
-        self.port_owner_var.set(self.fund_owner_var.get())
+        self.port_owner_var.set(form.owner)
         self.port_fund_var.set(name)
         self.refresh_funds()
         messagebox.showinfo("New fund", f"Created fund “{name}”.")
@@ -2295,65 +2152,45 @@ class TradeEntryApp(tk.Tk):
         self.notes_var.set("")
 
     def save_trade(self) -> None:
-        fund_name = self.trade_fund_var.get().strip()
-        if not fund_name:
-            messagebox.showwarning("Save trade", "Select or create a fund first.")
-            return
-        instrument = self.instrument_var.get().strip().lower()
-        ticker = self.ticker_var.get().strip().upper()
-        if not ticker:
-            messagebox.showwarning("Save trade", "Enter a ticker.")
-            return
         try:
-            trade_date = _parse_trade_date(self.trade_date_var.get())
-            shares = float(self.shares_var.get().strip().replace(",", ""))
-            price = float(self.price_var.get().strip().replace(",", ""))
-            fees = float(self.fees_var.get().strip().replace(",", "") or "0")
-        except ValueError as e:
-            messagebox.showerror("Save trade", str(e) if str(e) else "Check shares, price, and fees are numbers.")
+            form = parse_trade_form(
+                fund_name=self.trade_fund_var.get(),
+                ticker=self.ticker_var.get(),
+                instrument=self.instrument_var.get(),
+                side=self.side_var.get(),
+                date_text=self.trade_date_var.get(),
+                shares_text=self.shares_var.get(),
+                price_text=self.price_var.get(),
+                fees_text=self.fees_var.get(),
+                expiry_text=self.opt_expiry_var.get(),
+                strike_text=self.opt_strike_var.get(),
+                put_call_text=self.opt_put_call_var.get(),
+                notes_text=self.notes_var.get(),
+            )
+        except FormError as e:
+            messagebox.showwarning("Save trade", str(e))
             return
 
-        if shares <= 0 or price < 0 or fees < 0:
-            messagebox.showerror("Save trade", "Quantity must be > 0; price and fees must be ≥ 0.")
-            return
-
-        expiry_raw = self.opt_expiry_var.get().strip()
-        expiry = date.fromisoformat(expiry_raw) if expiry_raw else None
-        strike_raw = self.opt_strike_var.get().strip().replace(",", "")
-        strike = float(strike_raw) if strike_raw else None
-        put_call = self.opt_put_call_var.get().strip().lower() or None
-
-        if instrument == "option":
-            from ledger.option_symbols import is_occ_symbol
-
-            if not is_occ_symbol(ticker) and not all([expiry, strike, put_call]):
-                messagebox.showwarning(
-                    "Save trade",
-                    "Enter an OCC symbol in Ticker, or the underlying symbol plus expiry, strike, and call/put.",
-                )
-                return
-
-        notes = self.notes_var.get().strip() or None
         try:
             trades_cli.run_trade_add(
-                fund_name,
-                ticker,
-                self.side_var.get(),
-                shares,
-                price,
-                trade_date,
-                fees,
-                notes,
-                instrument_type=instrument,
-                expiry=expiry,
-                strike=strike,
-                put_call=put_call,
+                form.fund_name,
+                form.ticker,
+                form.side,
+                form.shares,
+                form.price,
+                form.trade_date,
+                form.fees,
+                form.notes,
+                instrument_type=form.instrument,
+                expiry=form.expiry,
+                strike=form.strike,
+                put_call=form.put_call,
             )
         except ValueError as e:
             messagebox.showerror("Save trade", str(e))
             return
 
-        used = "today" if not self.trade_date_var.get().strip() else trade_date.isoformat()
+        used = "today" if not self.trade_date_var.get().strip() else form.trade_date.isoformat()
         from reports.fund_balance_history import clear_fund_balance_series_cache
         from reports.heatmap_data import clear_heatmap_caches
         from ledger.quotes import clear_historical_close_cache
@@ -2361,13 +2198,13 @@ class TradeEntryApp(tk.Tk):
         clear_fund_balance_series_cache()
         clear_heatmap_caches()
         clear_historical_close_cache()
-        qty_word = "contracts" if instrument == "option" else "shares"
+        qty_word = "contracts" if form.instrument == "option" else "shares"
         self.status_var.set(
-            f"Saved {self.side_var.get()} {shares:g} {qty_word} {ticker} "
-            f"@ {price} on {used} → {fund_name}"
+            f"Saved {form.side} {form.shares:g} {qty_word} {form.ticker} "
+            f"@ {form.price} on {used} → {form.fund_name}"
         )
         self.refresh_trade_list()
-        if self._port_fund_filter() in (None, fund_name):
+        if self._port_fund_filter() in (None, form.fund_name):
             self.refresh_portfolio_view()
         self.refresh_ledger_detail_view()
         self.ticker_var.set("")
@@ -2375,7 +2212,6 @@ class TradeEntryApp(tk.Tk):
         self.price_var.set("")
         self.fees_var.set("0")
         self.notes_var.set("")
-
 
 def _ensure_gui_deps() -> None:
     """Check the heat-map dependency. Install it from requirements.txt, never at runtime."""

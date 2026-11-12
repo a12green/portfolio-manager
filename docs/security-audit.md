@@ -106,8 +106,8 @@ Two stopped the app from starting. The rest broke a feature when it was used.
   test, and with `ResourceWarning` treated as an error the suite passes with no
   unclosed-connection warnings.
 
-- `pytest`: 288 passed, with `ResourceWarning` treated as an error.
-- Line coverage: 80.6% (6,202 of 7,690 statements). `trade_gui.py` is excluded
+- `pytest`: 342 passed, with `ResourceWarning` treated as an error.
+- Line coverage: 81.1% (6,421 of 7,914 statements). `trade_gui.py` is excluded
   because it needs a display. Counting it, coverage is about 67%.
 - The remaining gaps are mostly less common importer layouts and the market
   movers and fund-cash reconciliation code. The portfolio card widgets are
