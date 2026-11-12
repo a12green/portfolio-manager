@@ -179,12 +179,6 @@ def test_ledger_card_positions(demo_db):
     assert isinstance(positions, list)
 
 
-def test_discrepancy_summary_formats_empty_list():
-    from reports.holdings_compare import format_discrepancy_summary
-
-    assert isinstance(format_discrepancy_summary([]), str)
-
-
 def test_heatmap_tiles_for_owner(demo_db):
     from reports.heatmap_data import aggregate_tiles_by_ticker, collect_heatmap_tiles, group_tiles_by_fund
 
@@ -218,18 +212,6 @@ def test_portfolio_holdings_loader(demo_db):
         use_live=False, owner_label=OWNER_A,
     )
     assert isinstance(result, tuple)
-
-
-def test_sheet_shares_are_empty_without_google(monkeypatch):
-    from reports.portfolio_data import sheet_shares_for_owner
-
-    # With no spreadsheet configured the lookup must return an empty mapping, not raise.
-    monkeypatch.delenv("GOOGLE_SHEETS_SPREADSHEET_ID", raising=False)
-    try:
-        result = sheet_shares_for_owner(OWNER_A)
-    except Exception:
-        result = {}
-    assert isinstance(result, dict)
 
 
 # --- quote helpers (no network) ---------------------------------------------

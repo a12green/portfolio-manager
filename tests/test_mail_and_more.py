@@ -1,4 +1,4 @@
-"""Email commands, the PDF report from sheet data, the wide-format fund CSV, and option alerts.
+"""Email commands, the PDF report from the holdings file, the wide-format fund CSV, and option alerts.
 
 SMTP is replaced by a fake server that records what would have been sent.
 """
@@ -109,7 +109,7 @@ def test_send_email_uses_ssl_port_465(smtp, monkeypatch):
 
 # --- CLI email commands -----------------------------------------------------------
 
-def test_email_holdings_from_sheet(demo_db, fake_sheets, smtp, monkeypatch):
+def test_email_holdings_from_csv(demo_db, holdings_csv, smtp, monkeypatch):
     code = _run(monkeypatch, "--email-holdings")
     assert code in (0, None)
     assert len(smtp.sent) == 1
@@ -122,7 +122,7 @@ def test_email_trade_report_for_fund(demo_db, smtp, monkeypatch, tmp_path):
     assert len(smtp.sent) == 1
 
 
-def test_pdf_report_from_demo_and_sheet(demo_db, fake_sheets, monkeypatch, tmp_path):
+def test_pdf_report_from_demo_and_csv(demo_db, holdings_csv, monkeypatch, tmp_path):
     out = tmp_path / "portfolio_report.pdf"
     monkeypatch.setenv("PDF_OUTPUT_PATH", str(out))
     code = _run(monkeypatch, "--pdf-report")

@@ -60,7 +60,7 @@ def demo_db(db_path, offline_fx):
 
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch):
-    """Fail fast if any test tries to reach a live service (Yahoo, Google, SMTP)."""
+    """Fail fast if any test tries to reach a live service (Yahoo or SMTP)."""
     import socket
 
     def _blocked(*args, **kwargs):
@@ -151,71 +151,21 @@ def fake_yahoo(monkeypatch):
 
 
 
-# --- Google Sheets fake (shared) --------------------------------------------------
+# --- Holdings file (local CSV, Stocks.csv layout) -----------------------------------
 
-class FakeWorksheet:
-    def __init__(self, records):
-        self._records = records
-
-    def get_all_records(self):
-        return list(self._records)
-
-
-class FakeSpreadsheet:
-    def __init__(self, records, fund_grids):
-        self._records = records
-        self._fund_grids = fund_grids
-
-    def worksheet(self, name):
-        return FakeWorksheet(self._records)
-
-    def values_batch_get(self, ranges):
-        return {"valueRanges": [{"values": grid} for grid in self._fund_grids]}
-
-
-class FakeGspreadClient:
-    def __init__(self, records, fund_grids):
-        self._sheet = FakeSpreadsheet(records, fund_grids)
-
-    def open_by_key(self, key):
-        return self._sheet
-
-
-# Synthetic portfolio layout, matching Stocks.csv: the first column holds the
-# "Portfolio" marker, Stock holds the owner name, and holdings follow their block.
-FAKE_PORTFOLIO_RECORDS = [
-    {"Account": "Portfolio", "Stock": "Household A", "Symbol": "", "Share Qty": "", "Average Purchase Price": "", "Current Price": ""},
-    {"Account": "", "Stock": "", "Symbol": "NVDA", "Share Qty": 10, "Average Purchase Price": 150.0, "Current Price": 180.0},
-    {"Account": "", "Stock": "", "Symbol": "AAPL", "Share Qty": 5, "Average Purchase Price": 190.0, "Current Price": 200.0},
-    {"Account": "Portfolio", "Stock": "Household B", "Symbol": "", "Share Qty": "", "Average Purchase Price": "", "Current Price": ""},
-    {"Account": "", "Stock": "", "Symbol": "MSFT", "Share Qty": 3, "Average Purchase Price": 400.0, "Current Price": 420.0},
-]
-
-# Fund List grid rows: columns A..K (index 0..10). Owner rows use A name, B cash, D cash, E active, I total, K profit.
-FAKE_FUND_GRIDS = [
-    [["Fidelity", "", "", "25000", "", "", "", "", "58000", "", "8000"]],
-    [["Fidelity Account B", "", "", "20000", "", "", "", "", "21000", "", "1000"]],
-    [["Household C fund", "", "", "5000", "", "", "", "", "5400", "", "400"]],
-]
+HOLDINGS_CSV = """Account,Stock,Symbol,Share Qty,Average Purchase Price,Current Price
+Portfolio,Household A,,,,
+,,NVDA,10,150,180
+,,AAPL,5,190,200
+Portfolio,Household B,,,,
+,,MSFT,3,400,420
+"""
 
 
 @pytest.fixture
-def fake_sheets(monkeypatch, tmp_path):
-    """Google Sheets returns synthetic data. No credentials or network are used."""
-    import gspread
-    from google.oauth2 import service_account
-
-    key = tmp_path / "service-account.json"
-    key.write_text("{}")
-    monkeypatch.setenv("GOOGLE_SHEETS_SPREADSHEET_ID", "sheet-id-for-tests")
-    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_FILE", str(key))
-    monkeypatch.setenv("GOOGLE_SHEET_NAME", "Portfolio")
-    monkeypatch.setenv("GOOGLE_FUND_LIST_SHEET_NAME", "Fund List")
-
-    client = FakeGspreadClient(FAKE_PORTFOLIO_RECORDS, FAKE_FUND_GRIDS)
-    monkeypatch.setattr(gspread, "authorize", lambda creds: client)
-    monkeypatch.setattr(service_account.Credentials, "from_service_account_file", classmethod(lambda cls, *a, **k: object()))
-    import importers.funds as funds_mod
-
-    monkeypatch.setattr(funds_mod, "_service_account_credentials", lambda: object())
-    return client
+def holdings_csv(monkeypatch, tmp_path):
+    """Point the app at a synthetic holdings file. No real holdings are used."""
+    path = tmp_path / "Stocks.csv"
+    path.write_text(HOLDINGS_CSV, encoding="utf-8")
+    monkeypatch.setenv("PORTFOLIO_CSV_PATH", str(path))
+    return path

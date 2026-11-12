@@ -150,21 +150,6 @@ def test_reconcile_opening_cash_to_target(demo_db):
         conn.close()
 
 
-def test_sync_opening_cash_from_fund_list_with_no_sheet(demo_db, monkeypatch):
-    from ledger.fund_cash_reconcile import sync_opening_cash_from_fund_list
-
-    monkeypatch.delenv("GOOGLE_SHEETS_SPREADSHEET_ID", raising=False)
-    conn = connect_db(demo_db)
-    try:
-        try:
-            result = sync_opening_cash_from_fund_list(conn)
-        except Exception:
-            result = {}
-    finally:
-        conn.close()
-    assert isinstance(result, dict)
-
-
 # --- reports/option_strike_alerts.py ------------------------------------------
 
 def test_find_strike_alerts_on_demo_data(demo_db, fake_yahoo):

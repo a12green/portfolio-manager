@@ -151,8 +151,8 @@ def test_fund_list_empty_database(db_path, monkeypatch, capsys):
     capsys.readouterr()
 
 
-def test_snapshot_stocks_without_sheet_reports_clearly(demo_db, monkeypatch):
-    monkeypatch.delenv("GOOGLE_SHEETS_SPREADSHEET_ID", raising=False)
+def test_snapshot_stocks_without_holdings_file_reports_clearly(demo_db, monkeypatch, tmp_path):
     monkeypatch.delenv("PORTFOLIO_CSV_PATH", raising=False)
-    with pytest.raises(ValueError, match="No data source configured"):
+    monkeypatch.setattr(main, "_project_dir", lambda: tmp_path)
+    with pytest.raises(ValueError, match="No holdings file configured"):
         _run(monkeypatch, "--snapshot-stocks-daily")
