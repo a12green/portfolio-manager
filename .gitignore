@@ -30,3 +30,7 @@ Icon
 # Sample data is fictional and is meant to be committed
 !sample_data/**/*.csv
 !sample_data/**/*.pdf
+
+# Test coverage output
+.coverage
+htmlcov/

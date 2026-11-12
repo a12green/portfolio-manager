@@ -33,7 +33,7 @@ def init_database():
     print(f"   ✓ Data directory: {data_dir}")
     
     # Initialize main portfolio database
-    conn = connect_db(str(data_dir / "portfolio_history.sqlite3"))
+    conn = connect_db(data_dir / "portfolio_history.sqlite3")
     try:
         init_schema(conn)
         print("   ✓ Portfolio schema created")
@@ -41,7 +41,7 @@ def init_database():
         conn.close()
     
     # Initialize trades database
-    conn = connect_db(str(data_dir / "portfolio_history.sqlite3"))
+    conn = connect_db(data_dir / "portfolio_history.sqlite3")
     try:
         init_trade_schema(conn)
         seed_default_users(conn)

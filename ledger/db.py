@@ -43,7 +43,8 @@ ON fund_weekly_snapshots (week_start, owner);
 """
 
 
-def connect_db(db_path: Path) -> sqlite3.Connection:
+def connect_db(db_path: Path | str) -> sqlite3.Connection:
+    db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row

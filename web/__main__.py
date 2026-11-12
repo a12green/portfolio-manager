@@ -14,7 +14,7 @@ def _warn_if_admin_locked() -> None:
     """Tell the user, before serving, if the admin password has not been set yet."""
     import trades_cli
     from ledger.db import connect_db
-    from trades_db import init_trade_schema
+    from ledger.trades_db import init_trade_schema
     from web import auth
 
     conn = connect_db(trades_cli._db_path())
