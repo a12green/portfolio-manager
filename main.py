@@ -915,7 +915,7 @@ def main() -> None:
     if args.serve_web:
         import uvicorn
 
-        host = os.getenv("WEB_HOST", "0.0.0.0")
+        host = os.getenv("WEB_HOST", "127.0.0.1")
         port = _parse_int_env("WEB_PORT", 8080)
         uvicorn.run("web.app:app", host=host, port=port)
         return
