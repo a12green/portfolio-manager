@@ -340,63 +340,52 @@ def meta_payload(user: "WebUser | None" = None) -> dict[str, Any]:
 
 def fund_balances_payload(owner: str) -> dict[str, Any]:
     """Current fund balances (manual override if set, else from ledger)."""
-    from reports.net_worth import compute_owner_net_worth
+    from app.use_cases import net_worth
 
     owner = owner.strip()
-    conn = connect_db(trades_cli._db_path())
-    try:
-        init_trade_schema(conn)
-        net_worth = compute_owner_net_worth(conn, owner, use_live=False)
-        balances = []
-        for line in net_worth.lines:
-            if line.kind == "fund":
-                balances.append(
-                    {
-                        "fund_name": line.label,
-                        "currency": line.currency,
-                        "amount": line.amount_local,
-                        "amount_usd": line.amount_usd,
-                        "as_of": line.as_of,
-                        "source": line.source,
-                    }
-                )
-        return {
-            "owner": owner,
-            "balances": balances,
-            "total_usd": sum(b["amount_usd"] for b in balances),
+    nw = net_worth(trades_cli._db_path(), owner=owner, use_live=False)
+    balances = [
+        {
+            "fund_name": line.label,
+            "currency": line.currency,
+            "amount": line.amount_local,
+            "amount_usd": line.amount_usd,
+            "as_of": line.as_of,
+            "source": line.source,
         }
-    finally:
-        conn.close()
+        for line in nw.lines
+        if line.kind == "fund"
+    ]
+    return {
+        "owner": owner,
+        "balances": balances,
+        "total_usd": sum(b["amount_usd"] for b in balances),
+    }
 
 
 def net_worth_payload(owner: str) -> dict[str, Any]:
     """Owner-level net worth breakdown (funds + other assets)."""
-    from reports.net_worth import compute_owner_net_worth
+    from app.use_cases import net_worth
 
     owner = owner.strip()
-    conn = connect_db(trades_cli._db_path())
-    try:
-        init_trade_schema(conn)
-        net_worth = compute_owner_net_worth(conn, owner, use_live=False)
-        return {
-            "owner": owner,
-            "lines": [
-                {
-                    "label": line.label,
-                    "kind": line.kind,
-                    "currency": line.currency,
-                    "amount_local": line.amount_local,
-                    "amount_usd": line.amount_usd,
-                    "as_of": line.as_of,
-                    "source": line.source,
-                }
-                for line in net_worth.lines
-            ],
-            "total_usd": net_worth.total_usd,
-            "fx_rates": net_worth.fx_rates,
-        }
-    finally:
-        conn.close()
+    nw = net_worth(trades_cli._db_path(), owner=owner, use_live=False)
+    return {
+        "owner": owner,
+        "lines": [
+            {
+                "label": line.label,
+                "kind": line.kind,
+                "currency": line.currency,
+                "amount_local": line.amount_local,
+                "amount_usd": line.amount_usd,
+                "as_of": line.as_of,
+                "source": line.source,
+            }
+            for line in nw.lines
+        ],
+        "total_usd": nw.total_usd,
+        "fx_rates": nw.fx_rates,
+    }
 
 
 def other_assets_payload(owner: str) -> dict[str, Any]:
@@ -427,38 +416,24 @@ def other_assets_payload(owner: str) -> dict[str, Any]:
 
 
 def fund_trends_payload(owner: str, fund: str | None = None) -> dict[str, Any]:
-    """Historical fund balance data for charting.
-
-    Mirrors the desktop GUI's fund-trends tab (trade_gui.py), which calls
-    collect_fund_balance_series with the same defaults (monthly statements mode).
-    """
-    from reports.fund_balance_history import collect_fund_balance_series
+    """Historical fund balance data for charting (monthly statements mode, as in the GUI)."""
+    from app.use_cases import fund_trends, series_nav_usd
     from ledger.quotes import fx_to_usd_rates
 
     owner = owner.strip()
-    owner_arg = None if owner.lower() == "all" else owner
-    fund_arg = fund.strip() if fund and fund.strip().lower() != "all" else None
-
     fx = fx_to_usd_rates(allow_network=False)
-    series_list = collect_fund_balance_series(
-        trades_cli._db_path(),
-        owner=owner_arg,
-        fund_name=fund_arg,
-    )
-
     all_series = []
-    for series in series_list:
+    for series in fund_trends(trades_cli._db_path(), owner=owner, fund=fund):
         if not series.points:
             continue
-        nav_local = [p.nav for p in series.points]
         all_series.append(
             {
                 "fund_name": series.fund_name,
                 "owner": series.owner,
                 "currency": series.currency,
                 "dates": [p.as_of.isoformat() for p in series.points],
-                "nav_local": nav_local,
-                "nav_usd": [n * fx.get(series.currency.upper(), 1.0) for n in nav_local],
+                "nav_local": [p.nav for p in series.points],
+                "nav_usd": series_nav_usd(series, fx),
             }
         )
     return {"owner": owner, "fund": fund, "series": all_series}

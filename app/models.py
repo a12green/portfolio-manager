@@ -42,3 +42,16 @@ class HeatmapView:
     total_usd: float = 0.0
     owner: str | None = None
     fund: str | None = None
+
+
+@dataclass(frozen=True)
+class BalanceRow:
+    fund: object
+    manual: object | None
+    ledger: tuple[float, float, float] | None  # (cash, positions, nav) in the fund's currency
+
+
+@dataclass(frozen=True)
+class BalanceView:
+    rows: list = field(default_factory=list)
+    manual_count: int = 0

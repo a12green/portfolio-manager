@@ -1001,19 +1001,14 @@ class TradeEntryApp(tk.Tk):
         )
 
     def refresh_net_worth(self, *, use_live: bool = False) -> None:
-        from ledger.db import connect_db
-        from reports.net_worth import compute_owner_net_worth
+        from app.use_cases import net_worth
 
         owner = self.nw_owner_var.get().strip()
         self._clear_tree(self.net_worth_tree)
         if not owner:
             return
 
-        conn = connect_db(trades_cli._db_path())
-        try:
-            result = compute_owner_net_worth(conn, owner, use_live=use_live)
-        finally:
-            conn.close()
+        result = net_worth(trades_cli._db_path(), owner=owner, use_live=use_live)
 
         for line in result.lines:
             self.net_worth_tree.insert(
@@ -1528,14 +1523,14 @@ class TradeEntryApp(tk.Tk):
             err: str | None = None
             series = []
             try:
-                from reports.fund_balance_history import collect_fund_balance_series
+                from app.use_cases import fund_trends
 
-                series = collect_fund_balance_series(
+                series = fund_trends(
                     trades_cli._db_path(),
                     owner=owner_arg,
-                    fund_name=fund_arg,
+                    fund=fund_arg,
                     location=loc_sel,
-                    trends_mode=trends_mode,  # type: ignore[arg-type]
+                    trends_mode=trends_mode,
                 )
             except Exception as e:
                 err = str(e)
@@ -1625,58 +1620,31 @@ class TradeEntryApp(tk.Tk):
         if names and self.bal_fund_var.get() not in names:
             self.bal_fund_var.set(names[0])
 
-    def _ledger_for_fund(self, conn, fund) -> tuple[float, float, float] | None:
-        from ledger.trade_ledger import build_fund_ledger_with_db
-        from ledger.quotes import marks_for_fund
-
-        marks = marks_for_fund(conn, fund, date.today(), live=False)
-        result = build_fund_ledger_with_db(conn, fund, marks, date.today(), strict=False)
-        return result.cash_balance, result.positions_value, result.nav
-
     def refresh_fund_balances(self) -> None:
-        from ledger.db import connect_db
-        from ledger.trades_db import fetch_fund_manual_balances, init_trade_schema, list_funds
+        from app.use_cases import fund_balance_rows
 
         self._clear_tree(self.balance_tree)
-        funds: list = []
-        manual: dict = {}
-        conn = connect_db(trades_cli._db_path())
-        try:
-            init_trade_schema(conn)
-            funds = list_funds(conn)
-            manual = fetch_fund_manual_balances(conn)
-            ledger_cache: dict[int, tuple[float, float, float] | None] = {}
-            for fund in funds:
-                try:
-                    ledger_cache[fund.id] = self._ledger_for_fund(conn, fund)
-                except Exception:
-                    ledger_cache[fund.id] = None
+        view = fund_balance_rows(trades_cli._db_path())
+        for row in view.rows:
+            fund, m, led = row.fund, row.manual, row.ledger
+            self.balance_tree.insert(
+                "",
+                tk.END,
+                iid=str(fund.id),
+                values=balance_row_cells(
+                    name=fund.name,
+                    owner=fund.owner,
+                    currency=fund.currency,
+                    manual_nav=m.nav if m else None,
+                    manual_cash=m.cash_balance if m else None,
+                    manual_positions=m.positions_value if m else None,
+                    manual_date=m.balance_date.isoformat() if m else None,
+                    ledger_nav=led[2] if led else None,
+                    ledger_cash=led[0] if led else None,
+                ),
+            )
 
-            for fund in funds:
-                m = manual.get(fund.id)
-                led = ledger_cache.get(fund.id)
-                led_cash = led[0] if led else None
-                led_nav = led[2] if led else None
-                self.balance_tree.insert(
-                    "",
-                    tk.END,
-                    iid=str(fund.id),
-                    values=balance_row_cells(
-                        name=fund.name,
-                        owner=fund.owner,
-                        currency=fund.currency,
-                        manual_nav=m.nav if m else None,
-                        manual_cash=m.cash_balance if m else None,
-                        manual_positions=m.positions_value if m else None,
-                        manual_date=m.balance_date.isoformat() if m else None,
-                        ledger_nav=led_nav,
-                        ledger_cash=led_cash,
-                    ),
-                )
-        finally:
-            conn.close()
-
-        self.bal_summary_var.set(balances_summary(len(funds), len(manual)))
+        self.bal_summary_var.set(balances_summary(len(view.rows), view.manual_count))
         if self.bal_fund_var.get():
             self._load_balance_form_for_fund()
         self.status_var.set("Fund balances updated.")
@@ -1836,14 +1804,14 @@ class TradeEntryApp(tk.Tk):
             cards = []
             summary = ""
             try:
-                from reports.portfolio_data import load_portfolio_holdings
+                from app.use_cases import portfolio_holdings
 
-                cards, summary = load_portfolio_holdings(
+                cards, summary = portfolio_holdings(
                     trades_cli._db_path(),
                     owner=owner,
-                    fund_filter=fund_filter,
-                    market_sel=market_sel,
-                    use_live=use_live,
+                    fund=fund_filter,
+                    market=market_sel,
+                    live=use_live,
                     owner_label=label,
                 )
                 self._holdings_loaded = True

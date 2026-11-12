@@ -107,3 +107,53 @@ def test_mover_row_cells_formats_each_field():
     assert mover_row_cells(row, "US") == ("1", "NVDA", "NVIDIA", "$180.00", "$3.00", "+1.70%", "4.50M")
     gap = _NS(rank=2, symbol="X", name="Y", price=None, change=None, change_pct=None, volume=None)
     assert mover_row_cells(gap, "AUS")[3:] == ("—", "—", "—", "—")
+
+
+from app.use_cases import (  # noqa: E402
+    fund_balance_rows,
+    fund_trends,
+    net_worth,
+    portfolio_holdings,
+    series_nav_usd,
+)
+
+
+def test_portfolio_holdings_for_owner_returns_cards_and_summary(holdings_csv, demo_db):
+    cards, summary = portfolio_holdings(
+        demo_db, owner=OWNER_A, fund=None, market="All", live=False, owner_label=OWNER_A
+    )
+    assert isinstance(cards, list)
+    assert isinstance(summary, str)
+
+
+def test_net_worth_lists_funds_for_owner(demo_db):
+    result = net_worth(demo_db, owner=OWNER_A, use_live=False)
+    assert any(line.kind == "fund" and line.label == "Fidelity" for line in result.lines)
+    assert result.total_usd > 0
+
+
+def test_fund_balance_rows_cover_every_fund(demo_db):
+    view = fund_balance_rows(demo_db)
+    names = {row.fund.name for row in view.rows}
+    assert {"Fidelity", "UK Super", "Super A", "Fidelity Account B"} <= names
+    assert view.manual_count == 0  # the demo data has no manual balances yet
+    from web.services import update_fund_manual_balance
+    from datetime import date as _d
+
+    update_fund_manual_balance("Fidelity", 61000.0, _d(2026, 10, 31))
+    assert fund_balance_rows(demo_db).manual_count == 1
+
+
+def test_fund_trends_return_series_with_points(demo_db):
+    series = fund_trends(demo_db, owner=OWNER_A, fund=None)
+    assert series, "demo data has statements for owner A"
+    assert all(s.owner == OWNER_A for s in series)
+
+
+def test_series_nav_usd_converts_with_rate(demo_db):
+    series = fund_trends(demo_db, owner=OWNER_A, fund="Fidelity")
+    usd = series_nav_usd(series[0], {"USD": 1.0})
+    assert usd == [p.nav for p in series[0].points]
+    aud_like = SimpleNamespace(currency="aud", points=[SimpleNamespace(nav=100.0)])
+    assert series_nav_usd(aud_like, {"AUD": 0.65}) == [pytest.approx(65.0)]
+    assert series_nav_usd(SimpleNamespace(currency="XXX", points=[SimpleNamespace(nav=5.0)]), {}) == [5.0]

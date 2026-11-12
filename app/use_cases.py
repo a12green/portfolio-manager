@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from app.models import FundSummary, HeatmapView, LedgerDetail, LedgerPosition
+from app.models import BalanceRow, BalanceView, FundSummary, HeatmapView, LedgerDetail, LedgerPosition
 from ledger.db import connect_db
 from ledger.option_symbols import display_option_label
 from ledger.trade_ledger import build_fund_ledger_with_db
@@ -154,3 +154,88 @@ def market_movers(market: str, *, force: bool = False):
     mkt = "AU" if market.upper().startswith("AU") or market.lower().startswith("aust") else "US"
     gainers, losers = fetch_market_movers(mkt, force=force)  # type: ignore[arg-type]
     return mkt, list(gainers), list(losers)
+
+
+def portfolio_holdings(
+    db_path: Path,
+    *,
+    owner: str,
+    fund: str | None,
+    market: str,
+    live: bool,
+    owner_label: str,
+):
+    """Holdings cards and the one-line summary for the Current portfolio view."""
+    from reports.portfolio_data import load_portfolio_holdings
+
+    fund_filter = None if _is_all(fund) else fund.strip()
+    return load_portfolio_holdings(
+        db_path,
+        owner=owner,
+        fund_filter=fund_filter,
+        market_sel=market,
+        use_live=live,
+        owner_label=owner_label,
+    )
+
+
+def net_worth(db_path: Path, *, owner: str, use_live: bool = False):
+    """Owner net worth: each fund (manual balance, or ledger total) and other asset, with FX."""
+    from reports.net_worth import compute_owner_net_worth
+
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        return compute_owner_net_worth(conn, owner.strip(), use_live=use_live)
+    finally:
+        conn.close()
+
+
+def fund_balance_rows(db_path: Path) -> BalanceView:
+    """Every fund with its stored manual balance and its current ledger totals (local currency)."""
+    from ledger.trade_ledger import build_fund_ledger_with_db
+    from ledger.trades_db import fetch_fund_manual_balances
+
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        funds = list_funds(conn)
+        manual = fetch_fund_manual_balances(conn)
+        rows = []
+        for fund in funds:
+            try:
+                marks = marks_for_fund(conn, fund, date.today(), live=False)
+                result = build_fund_ledger_with_db(conn, fund, marks, date.today(), strict=False)
+                ledger_totals = (result.cash_balance, result.positions_value, result.nav)
+            except Exception:
+                ledger_totals = None
+            rows.append(BalanceRow(fund=fund, manual=manual.get(fund.id), ledger=ledger_totals))
+        return BalanceView(rows=rows, manual_count=len(manual))
+    finally:
+        conn.close()
+
+
+def fund_trends(
+    db_path: Path,
+    *,
+    owner: str | None,
+    fund: str | None,
+    location: str = "All",
+    trends_mode: str = "statements",
+):
+    """Historical NAV series for funds. Each series keeps its own currency."""
+    from reports.fund_balance_history import collect_fund_balance_series
+
+    return collect_fund_balance_series(
+        db_path,
+        owner=None if _is_all(owner) else owner.strip(),
+        fund_name=None if _is_all(fund) else fund.strip(),
+        location=location,
+        trends_mode=trends_mode,  # type: ignore[arg-type]
+    )
+
+
+def series_nav_usd(series, fx: dict[str, float]) -> list[float]:
+    """The series' NAV in USD, converted with the given rates (1.0 when a currency is unknown)."""
+    rate = fx.get(series.currency.upper(), 1.0)
+    return [p.nav * rate for p in series.points]
