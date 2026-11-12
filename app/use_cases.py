@@ -239,3 +239,188 @@ def series_nav_usd(series, fx: dict[str, float]) -> list[float]:
     """The series' NAV in USD, converted with the given rates (1.0 when a currency is unknown)."""
     rate = fx.get(series.currency.upper(), 1.0)
     return [p.nav * rate for p in series.points]
+
+
+# --- writes -------------------------------------------------------------------------
+#
+# Every write takes ``owner_scope``: None means an administrator (any fund), otherwise the
+# operation is refused with PermissionError unless the fund belongs to that owner.
+
+
+def _check_scope(owner_scope: str | None, owner: str) -> None:
+    if owner_scope is not None and owner.strip() != owner_scope:
+        raise PermissionError("That fund belongs to another owner.")
+
+
+def _fund_for_write(conn, fund_name: str, owner_scope: str | None):
+    fund = get_fund_by_name(conn, fund_name.strip())
+    if fund is None:
+        raise ValueError(f"Unknown fund {fund_name!r}")
+    _check_scope(owner_scope, fund.owner)
+    return fund
+
+
+def _after_data_change() -> None:
+    """Drop cached prices and charts so the next view shows the new data."""
+    from ledger.quotes import clear_historical_close_cache, clear_live_quotes_cache
+    from reports.fund_balance_history import clear_fund_balance_series_cache
+    from reports.heatmap_data import clear_heatmap_caches
+
+    clear_live_quotes_cache()
+    clear_heatmap_caches()
+    clear_fund_balance_series_cache()
+    clear_historical_close_cache()
+
+
+def record_trade(
+    db_path: Path,
+    *,
+    fund_name: str,
+    ticker: str,
+    side: str,
+    shares: float,
+    price: float,
+    trade_date: date | None = None,
+    fees: float = 0.0,
+    notes: str | None = None,
+    instrument_type: str = "stock",
+    underlying: str | None = None,
+    expiry: date | None = None,
+    strike: float | None = None,
+    put_call: str | None = None,
+    contract_multiplier: float | None = None,
+    owner_scope: str | None = None,
+):
+    """Record a buy or sell in a fund and return the stored trade."""
+    from ledger.trades_db import fetch_trades_for_fund, insert_trade
+
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        fund = _fund_for_write(conn, fund_name, owner_scope)
+        tid = insert_trade(
+            conn,
+            fund.id,
+            trade_date or date.today(),
+            ticker.strip().upper(),
+            side.strip().lower(),
+            shares,
+            price,
+            fees,
+            notes,
+            instrument_type=instrument_type,
+            underlying=underlying,
+            expiry=expiry,
+            strike=strike,
+            put_call=put_call,
+            contract_multiplier=contract_multiplier,
+        )
+        trade = next(t for t in fetch_trades_for_fund(conn, fund.id) if t.id == tid)
+    finally:
+        conn.close()
+    _after_data_change()
+    return trade
+
+
+def create_fund(
+    db_path: Path,
+    *,
+    name: str,
+    owner: str,
+    opening_cash: float,
+    currency: str,
+    owner_scope: str | None = None,
+):
+    """Create a trade fund for one of the configured owners."""
+    from config import OWNERS
+    from ledger.trades_db import create_fund as _create_fund
+
+    clean = name.strip()
+    if owner.strip() not in OWNERS:
+        raise ValueError(f"Unknown owner {owner!r}. Use one of: {', '.join(OWNERS)}")
+    _check_scope(owner_scope, owner.strip())
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        if get_fund_by_name(conn, clean):
+            raise ValueError(f"Fund {clean!r} already exists.")
+        return _create_fund(conn, clean, owner.strip(), opening_cash, currency.strip().upper())
+    finally:
+        conn.close()
+
+
+def save_fund_balance(
+    db_path: Path,
+    *,
+    fund_name: str,
+    as_of: date,
+    nav: float,
+    cash: float | None = None,
+    positions: float | None = None,
+    notes: str | None = None,
+    owner_scope: str | None = None,
+) -> None:
+    """Store a manual balance for a fund, which then overrides the ledger total in net worth."""
+    from ledger.trades_db import upsert_fund_manual_balance
+
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        fund = _fund_for_write(conn, fund_name, owner_scope)
+        upsert_fund_manual_balance(
+            conn, fund.id, as_of, nav, cash_balance=cash, positions_value=positions, notes=notes
+        )
+    finally:
+        conn.close()
+    _after_data_change()
+
+
+def clear_fund_balance(db_path: Path, *, fund_name: str, owner_scope: str | None = None) -> bool:
+    """Remove a fund's manual balance. Returns False when none was stored."""
+    from ledger.trades_db import clear_fund_manual_balance
+
+    conn = connect_db(db_path)
+    try:
+        init_trade_schema(conn)
+        fund = _fund_for_write(conn, fund_name, owner_scope)
+        removed = clear_fund_manual_balance(conn, fund.id)
+    finally:
+        conn.close()
+    _after_data_change()
+    return bool(removed)
+
+
+def save_other_asset(
+    db_path: Path,
+    *,
+    owner: str,
+    asset_type: str,
+    amount: float,
+    currency: str = "USD",
+    notes: str | None = None,
+    owner_scope: str | None = None,
+) -> None:
+    """Add or update a non-fund asset (cash held outside a fund, property, and so on)."""
+    from ledger.trades_db import upsert_owner_other_asset
+
+    _check_scope(owner_scope, owner.strip())
+    conn = connect_db(db_path)
+    try:
+        upsert_owner_other_asset(
+            conn, owner.strip(), asset_type.strip(), amount, currency=currency, notes=notes
+        )
+    finally:
+        conn.close()
+
+
+def delete_other_asset(
+    db_path: Path, *, owner: str, asset_type: str, owner_scope: str | None = None
+) -> bool:
+    from ledger.trades_db import delete_owner_other_asset
+
+    _check_scope(owner_scope, owner.strip())
+    conn = connect_db(db_path)
+    try:
+        return bool(delete_owner_other_asset(conn, owner.strip(), asset_type.strip()))
+    finally:
+        conn.close()

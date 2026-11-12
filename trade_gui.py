@@ -1050,8 +1050,7 @@ class TradeEntryApp(tk.Tk):
             self.nw_asset_notes_var.set(match.notes or "")
 
     def save_other_asset(self) -> None:
-        from ledger.db import connect_db
-        from ledger.trades_db import upsert_owner_other_asset
+        from app.use_cases import save_other_asset
 
         try:
             form = parse_other_asset_form(
@@ -1065,30 +1064,26 @@ class TradeEntryApp(tk.Tk):
             messagebox.showwarning("Net worth", str(e))
             return
 
-        conn = connect_db(trades_cli._db_path())
-        try:
-            upsert_owner_other_asset(
-                conn, form.owner, form.asset_type, form.amount, currency=form.currency, notes=form.notes
-            )
-        finally:
-            conn.close()
+        save_other_asset(
+            trades_cli._db_path(),
+            owner=form.owner,
+            asset_type=form.asset_type,
+            amount=form.amount,
+            currency=form.currency,
+            notes=form.notes,
+        )
 
         self.status_var.set(f"Saved {form.asset_type} for {_port_owner_label(form.owner)}.")
         self.refresh_net_worth(use_live=False)
 
     def delete_other_asset(self) -> None:
-        from ledger.db import connect_db
-        from ledger.trades_db import delete_owner_other_asset
+        from app.use_cases import delete_other_asset
 
         owner = self.nw_owner_var.get().strip()
         asset_type = self.nw_asset_type_var.get().strip()
         if not owner or not asset_type:
             return
-        conn = connect_db(trades_cli._db_path())
-        try:
-            removed = delete_owner_other_asset(conn, owner, asset_type)
-        finally:
-            conn.close()
+        removed = delete_other_asset(trades_cli._db_path(), owner=owner, asset_type=asset_type)
         if removed:
             self.status_var.set(f"Removed {asset_type} for {_port_owner_label(owner)}.")
             self.nw_asset_amount_var.set("")
@@ -1692,8 +1687,7 @@ class TradeEntryApp(tk.Tk):
             self.bal_notes_var.set("")
 
     def save_manual_fund_balance(self) -> None:
-        from ledger.db import connect_db
-        from ledger.trades_db import get_fund_by_name, init_trade_schema, upsert_fund_manual_balance
+        from app.use_cases import save_fund_balance
 
         try:
             form = parse_balance_form(
@@ -1708,45 +1702,34 @@ class TradeEntryApp(tk.Tk):
             messagebox.showerror("Fund balance", str(e))
             return
 
-        conn = connect_db(trades_cli._db_path())
         try:
-            init_trade_schema(conn)
-            fund = get_fund_by_name(conn, form.fund_name)
-            if not fund:
-                messagebox.showerror("Fund balance", f"Unknown fund {form.fund_name!r}.")
-                return
-            upsert_fund_manual_balance(
-                conn,
-                fund.id,
-                form.as_of,
-                form.nav,
-                cash_balance=form.cash,
-                positions_value=form.positions,
+            save_fund_balance(
+                trades_cli._db_path(),
+                fund_name=form.fund_name,
+                as_of=form.as_of,
+                nav=form.nav,
+                cash=form.cash,
+                positions=form.positions,
                 notes=form.notes,
             )
-        finally:
-            conn.close()
+        except ValueError as e:
+            messagebox.showerror("Fund balance", str(e))
+            return
 
         self.status_var.set(f"Saved manual balance for {form.fund_name}.")
         self.refresh_fund_balances()
 
     def clear_manual_fund_balance(self) -> None:
-        from ledger.db import connect_db
-        from ledger.trades_db import clear_fund_manual_balance, get_fund_by_name, init_trade_schema
+        from app.use_cases import clear_fund_balance
 
         name = self.bal_fund_var.get().strip()
         if not name:
             messagebox.showwarning("Fund balance", "Select a fund.")
             return
-        conn = connect_db(trades_cli._db_path())
         try:
-            init_trade_schema(conn)
-            fund = get_fund_by_name(conn, name)
-            if not fund:
-                return
-            removed = clear_fund_manual_balance(conn, fund.id)
-        finally:
-            conn.close()
+            removed = clear_fund_balance(trades_cli._db_path(), fund_name=name)
+        except ValueError:
+            return
 
         if removed:
             self.bal_nav_var.set("")
@@ -2048,13 +2031,6 @@ class TradeEntryApp(tk.Tk):
             return
 
         used = "today" if not self.trade_date_var.get().strip() else form.trade_date.isoformat()
-        from reports.fund_balance_history import clear_fund_balance_series_cache
-        from reports.heatmap_data import clear_heatmap_caches
-        from ledger.quotes import clear_historical_close_cache
-
-        clear_fund_balance_series_cache()
-        clear_heatmap_caches()
-        clear_historical_close_cache()
         qty_word = "contracts" if form.instrument == "option" else "shares"
         self.status_var.set(
             f"Saved {form.side} {form.shares:g} {qty_word} {form.ticker} "

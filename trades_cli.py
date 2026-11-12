@@ -12,11 +12,9 @@ from importers.import_trades import import_trades_csv
 from ledger.trade_ledger import build_fund_ledger
 from reports.trade_report import build_trade_report
 from ledger.trades_db import (
-    create_fund,
     fetch_fund_performance_history,
     fetch_trades_for_fund,
     get_fund_by_name,
-    init_trade_schema,
     list_funds,
     upsert_fund_performance_snapshot,
 )
@@ -27,19 +25,10 @@ def _db_path() -> Path:
 
 
 def run_fund_add(name: str, owner: str, opening_cash: float, currency: str) -> None:
-    from config import OWNERS
+    from app.use_cases import create_fund
 
-    if owner not in OWNERS:
-        raise ValueError(f"Unknown owner {owner!r}. Use one of: {', '.join(OWNERS)}")
-    conn = connect_db(_db_path())
-    try:
-        init_trade_schema(conn)
-        if get_fund_by_name(conn, name):
-            raise ValueError(f"Fund {name!r} already exists.")
-        fund = create_fund(conn, name, owner, opening_cash, currency)
-        print(f"Created fund {fund.name!r} (owner={fund.owner}, cash={fund.opening_cash:,.2f} {fund.currency})")
-    finally:
-        conn.close()
+    fund = create_fund(_db_path(), name=name, owner=owner, opening_cash=opening_cash, currency=currency)
+    print(f"Created fund {fund.name!r} (owner={fund.owner}, cash={fund.opening_cash:,.2f} {fund.currency})")
 
 
 def run_fund_list() -> None:
@@ -72,38 +61,30 @@ def run_trade_add(
     put_call: str | None = None,
     contract_multiplier: float | None = None,
 ) -> None:
-    conn = connect_db(_db_path())
-    try:
-        init_trade_schema(conn)
-        fund = get_fund_by_name(conn, fund_name)
-        if not fund:
-            raise ValueError(f"Unknown fund {fund_name!r}. Use --fund-add first.")
-        from ledger.trades_db import insert_trade
+    from app.use_cases import record_trade
 
-        tid = insert_trade(
-            conn,
-            fund.id,
-            trade_date or date.today(),
-            ticker,
-            side,
-            shares,
-            price,
-            fees,
-            notes,
-            instrument_type=instrument_type,
-            underlying=underlying,
-            expiry=expiry,
-            strike=strike,
-            put_call=put_call,
-            contract_multiplier=contract_multiplier,
-        )
-        label = "contracts" if instrument_type == "option" else "shares"
-        print(
-            f"Recorded trade #{tid}: {side} {shares} {label} {ticker} @ {price} "
-            f"in fund {fund_name!r}"
-        )
-    finally:
-        conn.close()
+    trade = record_trade(
+        _db_path(),
+        fund_name=fund_name,
+        ticker=ticker,
+        side=side,
+        shares=shares,
+        price=price,
+        trade_date=trade_date,
+        fees=fees,
+        notes=notes,
+        instrument_type=instrument_type,
+        underlying=underlying,
+        expiry=expiry,
+        strike=strike,
+        put_call=put_call,
+        contract_multiplier=contract_multiplier,
+    )
+    label = "contracts" if instrument_type == "option" else "shares"
+    print(
+        f"Recorded trade #{trade.id}: {side} {shares} {label} {ticker} @ {price} "
+        f"in fund {fund_name!r}"
+    )
 
 
 def run_trade_list(fund_name: str) -> None:

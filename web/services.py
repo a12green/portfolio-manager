@@ -9,21 +9,17 @@ from typing import TYPE_CHECKING, Any
 
 import trades_cli
 from ledger.db import connect_db
-from reports.holdings_compare import collect_ledger_card_positions
 from reports.portfolio_cards import HoldingCardData
 from reports.portfolio_data import load_portfolio_holdings
-from ledger.trade_ledger import build_fund_ledger_with_db
 from ledger.trades_db import (
     TradeFund,
     TradeRecord,
-    create_fund,
     fetch_trades_for_fund,
     get_fund_by_name,
     init_trade_schema,
-    insert_trade,
     list_funds,
 )
-from ledger.quotes import live_quotes_enabled, marks_for_fund
+from ledger.quotes import live_quotes_enabled
 
 if TYPE_CHECKING:
     from web.auth import WebUser
@@ -88,21 +84,16 @@ def create_fund_payload(
     *,
     user: "WebUser | None" = None,
 ) -> dict[str, Any]:
+    from app.use_cases import create_fund
+
     if user is not None:
         # Enforce owner scope here too, not only in the route: a caller must not
         # create a fund for an owner it cannot see.
         from web import auth
 
         auth.assert_owner_field(user, owner)
-    conn = connect_db(trades_cli._db_path())
-    try:
-        init_trade_schema(conn)
-        if get_fund_by_name(conn, name):
-            raise ValueError(f"Fund {name!r} already exists.")
-        fund = create_fund(conn, name, owner, opening_cash, currency)
-        return _fund_dict(fund)
-    finally:
-        conn.close()
+    fund = create_fund(trades_cli._db_path(), name=name, owner=owner, opening_cash=opening_cash, currency=currency)
+    return _fund_dict(fund)
 
 
 def _fund_dict(fund: TradeFund) -> dict[str, Any]:
@@ -181,42 +172,36 @@ def add_trade_payload(
     put_call: str | None = None,
     contract_multiplier: float | None = None,
 ) -> dict[str, Any]:
-    from ledger.quotes import clear_live_quotes_cache
-    from reports.heatmap_data import clear_heatmap_caches
+    from app.use_cases import record_trade
+    from web.auth import assert_fund_access
 
-    conn = connect_db(trades_cli._db_path())
-    try:
-        init_trade_schema(conn)
-        fund = get_fund_by_name(conn, fund_name)
-        if not fund:
-            raise ValueError(f"Unknown fund {fund_name!r}")
-        if user is not None:
-            from web.auth import assert_fund_access
-
+    if user is not None:
+        conn = connect_db(trades_cli._db_path())
+        try:
+            init_trade_schema(conn)
+            fund = get_fund_by_name(conn, fund_name)
+            if not fund:
+                raise ValueError(f"Unknown fund {fund_name!r}")
             assert_fund_access(user, fund)
-        tid = insert_trade(
-            conn,
-            fund.id,
-            trade_date or date.today(),
-            ticker.strip().upper(),
-            side.lower(),
-            shares,
-            price,
-            fees,
-            notes,
-            instrument_type=instrument_type,
-            underlying=underlying,
-            expiry=expiry,
-            strike=strike,
-            put_call=put_call,
-            contract_multiplier=contract_multiplier,
-        )
-        trades = fetch_trades_for_fund(conn, fund.id)
-        trade = next(t for t in trades if t.id == tid)
-    finally:
-        conn.close()
-    clear_live_quotes_cache()
-    clear_heatmap_caches()
+        finally:
+            conn.close()
+    trade = record_trade(
+        trades_cli._db_path(),
+        fund_name=fund_name,
+        ticker=ticker,
+        side=side,
+        shares=shares,
+        price=price,
+        trade_date=trade_date,
+        fees=fees,
+        notes=notes,
+        instrument_type=instrument_type,
+        underlying=underlying,
+        expiry=expiry,
+        strike=strike,
+        put_call=put_call,
+        contract_multiplier=contract_multiplier,
+    )
     return _trade_dict(trade)
 
 
@@ -443,51 +428,27 @@ def update_fund_manual_balance(
     fund_name: str, nav: float, balance_date: date
 ) -> dict[str, Any]:
     """Set or update manual balance override for a fund."""
-    from ledger.trades_db import upsert_fund_manual_balance
+    from app.use_cases import save_fund_balance
 
-    conn = connect_db(trades_cli._db_path())
-    try:
-        init_trade_schema(conn)
-        fund = get_fund_by_name(conn, fund_name)
-        if not fund:
-            raise ValueError(f"Unknown fund {fund_name!r}")
-        upsert_fund_manual_balance(conn, fund.id, balance_date, nav)
-        return {"fund_name": fund_name, "nav": nav, "balance_date": balance_date.isoformat()}
-    finally:
-        conn.close()
+    save_fund_balance(trades_cli._db_path(), fund_name=fund_name, as_of=balance_date, nav=nav)
+    return {"fund_name": fund_name, "nav": nav, "balance_date": balance_date.isoformat()}
 
 
 def create_other_asset(
     owner: str, asset_type: str, amount: float, currency: str
 ) -> dict[str, Any]:
     """Create or update other asset entry (tracked by owner+type)."""
-    from ledger.trades_db import upsert_owner_other_asset
+    from app.use_cases import save_other_asset
 
     owner = owner.strip()
-    conn = connect_db(trades_cli._db_path())
-    try:
-        init_trade_schema(conn)
-        upsert_owner_other_asset(conn, owner, asset_type, amount, currency=currency)
-        return {
-            "owner": owner,
-            "asset_type": asset_type,
-            "amount": amount,
-            "currency": currency,
-        }
-    finally:
-        conn.close()
+    save_other_asset(trades_cli._db_path(), owner=owner, asset_type=asset_type, amount=amount, currency=currency)
+    return {"owner": owner, "asset_type": asset_type, "amount": amount, "currency": currency}
 
 
 def delete_other_asset(owner: str, asset_type: str) -> dict[str, Any]:
     """Delete an other asset entry."""
-    from ledger.trades_db import delete_owner_other_asset
+    from app.use_cases import delete_other_asset as _delete
 
-    conn = connect_db(trades_cli._db_path())
-    try:
-        init_trade_schema(conn)
-        deleted = delete_owner_other_asset(conn, owner, asset_type)
-        if not deleted:
-            raise ValueError(f"Asset not found: {owner} / {asset_type}")
-        return {"owner": owner, "asset_type": asset_type, "deleted": True}
-    finally:
-        conn.close()
+    if not _delete(trades_cli._db_path(), owner=owner, asset_type=asset_type):
+        raise ValueError(f"Asset not found: {owner} / {asset_type}")
+    return {"owner": owner, "asset_type": asset_type, "deleted": True}
