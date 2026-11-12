@@ -1,0 +1,29 @@
+# Secrets — never commit these
+.env
+*.env
+shares-*.json
+*service-account*.json
+*serviceaccount*.json
+
+# Database (real trade/brokerage data)
+data/*.sqlite3
+*.sqlite3
+
+# Local runtime artifacts
+__pycache__/
+*.pyc
+.venv/
+Logs/
+reports/
+*.eml
+*.pdf
+*.PDF
+*.csv
+*.CSV
+*.app
+__pycache__/
+
+# macOS
+.DS_Store
+Icon
+

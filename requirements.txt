@@ -1,0 +1,15 @@
+gspread
+google-auth
+pandas
+python-dotenv
+matplotlib
+squarify
+exchange-calendars
+yfinance
+pymupdf
+fastapi
+uvicorn[standard]
+bcrypt
+ttkbootstrap
+asgiref
+slowapi
